@@ -1,4 +1,4 @@
-/* anandaka@buffalo.edu
+/* anandaka@buffalo.edu 
  * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
  *	The President and Fellows of Harvard College.
  *
@@ -99,12 +99,13 @@ boot(void)
 	kprintf("OS/161 base system version %s\n", BASE_VERSION);
 	kprintf("%s", harvard_copyright);
 	kprintf("\n");
-
-	kprintf("Put-your-group-name-here's system version %s (%s #%d)\n", 
+	DEBUG(DB_VM, "Print Header");
+	kprintf("anandaka@buffalo.edu system version %s (%s #%d)\n", 
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 
 	/* Early initialization. */
+	DEBUG(DB_VM, "Early Initialization");
 	ram_bootstrap();
 	thread_bootstrap();
 	hardclock_bootstrap();
@@ -112,10 +113,12 @@ boot(void)
 
 	/* Probe and initialize devices. Interrupts should come on. */
 	kprintf("Device probe...\n");
+	DEBUG(DB_VM, "Initialize devices");
 	KASSERT(curthread->t_curspl > 0);
 	mainbus_bootstrap();
 	KASSERT(curthread->t_curspl == 0);
 	/* Now do pseudo-devices. */
+	DEBUG(DB_VM, "Initialize pseudo-devices");
 	pseudoconfig();
 	kprintf("\n");
 
@@ -123,7 +126,7 @@ boot(void)
 	vm_bootstrap();
 	kprintf_bootstrap();
 	thread_start_cpus();
-
+	DEBUG(DB_VM, "Late Initialization");
 	/* Default bootfs - but ignore failure, in case emu0 doesn't exist */
 	vfs_setbootfs("emu0");
 
@@ -144,7 +147,7 @@ shutdown(void)
 {
 
 	kprintf("Shutting down.\n");
-	
+	DEBUG(DB_VM, "Shutting down");
 	vfs_clearbootfs();
 	vfs_clearcurdir();
 	vfs_unmountall();
@@ -166,6 +169,7 @@ shutdown(void)
 int
 sys_reboot(int code)
 {
+	DEBUG(DB_VM, "Rebooting");
 	switch (code) {
 	    case RB_REBOOT:
 	    case RB_HALT:
@@ -203,9 +207,10 @@ sys_reboot(int code)
 void
 kmain(char *arguments)
 {
+	DEBUG(DB_VM, "Booting");
 	boot();
-
+	DEBUG(DB_VM, "Printing Menu");
 	menu(arguments);
-
+	DEBUG(DB_VM, "Finish main");
 	/* Should not get here */
 }

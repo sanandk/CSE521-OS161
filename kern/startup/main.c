@@ -1,4 +1,4 @@
-/* anandaka@buffalo.edu 
+/* anandaka@buffalo.edu
  * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
  *	The President and Fellows of Harvard College.
  *
@@ -100,7 +100,7 @@ boot(void)
 	kprintf("%s", harvard_copyright);
 	kprintf("\n");
 	DEBUG(DB_VM, "Print Header");
-	kprintf("anandaka@buffalo.edu system version %s (%s #%d)\n", 
+	kprintf("anandaka@buffalo.edu system version %s (%s #%d)\n",
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 

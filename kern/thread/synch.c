@@ -34,6 +34,7 @@
 
 #include <types.h>
 #include <lib.h>
+#include <spl.h>
 #include <spinlock.h>
 #include <wchan.h>
 #include <thread.h>
@@ -147,6 +148,24 @@ V(struct semaphore *sem)
 //
 // Lock.
 
+int lock_data_get(volatile int *d)
+{
+	return *d;
+}
+void lock_data_set(volatile int *d, int val)
+{
+	*d=val;
+}
+int lock_data_testandset(volatile int *d)
+{
+	int x,y;
+	x=*d;
+	y=1;
+	if(x==0)
+		*d=y;
+	return x;
+}
+
 struct lock *
 lock_create(const char *name)
 {
@@ -158,6 +177,7 @@ lock_create(const char *name)
         }
 
         lock->lk_name = kstrdup(name);
+	lock_data_set(&lock->lk_lock, 0);
         if (lock->lk_name == NULL) {
                 kfree(lock);
                 return NULL;
@@ -182,17 +202,57 @@ lock_destroy(struct lock *lock)
 void
 lock_acquire(struct lock *lock)
 {
+	struct thread *mythread;
         // Write this
 
-        (void)lock;  // suppress warning until code gets written
+	splraise(IPL_NONE, IPL_HIGH);
+	
+
+	if (CURCPU_EXISTS()) {
+		mythread = curthread;
+		if (lock->lk_holder == mythread) {
+			panic("Deadlock on lock %p\n", lock);
+		}
+	}
+	else {
+		mythread = NULL;
+	}
+
+	while (1) {
+	
+		if (lock_data_get(&lock->lk_lock) != 0) {
+			continue;
+		}
+		if (lock_data_testandset(&lock->lk_lock) != 0) {
+			continue;
+		}
+		break;
+}
+
+	lock->lk_holder = mythread;
+
+
+   //     (void)lock;  // suppress warning until code gets written
 }
 
 void
 lock_release(struct lock *lock)
 {
+    
+// this must work before curcpu initialization 
+	if (CURCPU_EXISTS()) {
+		KASSERT(lock->lk_holder == curthread);
+	}
+
+	lock->lk_holder = NULL;
+	lock_data_set(&lock->lk_lock, 0);
+
+	spllower(IPL_HIGH, IPL_NONE);
+
         // Write this
 
-        (void)lock;  // suppress warning until code gets written
+    
+    //(void)lock;  // suppress warning until code gets written
 }
 
 bool
@@ -200,9 +260,15 @@ lock_do_i_hold(struct lock *lock)
 {
         // Write this
 
-        (void)lock;  // suppress warning until code gets written
+    	if (!CURCPU_EXISTS()) {
+		return true;
+	}
 
-        return true; // dummy until code gets written
+	/* Assume we can read lk_holder atomically enough for this to work */
+	return (lock->lk_holder == curthread);
+
+
+//        return true; // dummy until code gets written
 }
 
 ////////////////////////////////////////////////////////////

@@ -74,6 +74,9 @@ void V(struct semaphore *);
  */
 struct lock {
         char *lk_name;
+	volatile int lk_lock;	//lock data
+	struct thread *lk_holder;	//CPU holding this lock
+
         // add what you need here
         // (don't forget to mark things volatile as needed)
 };
@@ -95,6 +98,9 @@ void lock_acquire(struct lock *);
 void lock_release(struct lock *);
 bool lock_do_i_hold(struct lock *);
 void lock_destroy(struct lock *);
+int lock_data_get(volatile int *);
+void lock_data_set(volatile int *, int );
+int lock_data_testandset(volatile int *);
 
 
 /*

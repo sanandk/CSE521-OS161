@@ -119,6 +119,8 @@ int lock_data_testandset(volatile int *);
 
 struct cv {
         char *cv_name;
+	struct wchan *cv_wchan;
+        volatile int cv_count;
         // add what you need here
         // (don't forget to mark things volatile as needed)
 };

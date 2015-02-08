@@ -291,7 +291,14 @@ cv_create(const char *name)
                 kfree(cv);
                 return NULL;
         }
-        
+
+	cv->cv_wchan = wchan_create(cv->cv_name);
+	if (cv->cv_wchan == NULL) {
+		kfree(cv->cv_name);
+		kfree(cv);
+		return NULL;
+	}
+         cv->cv_count = 1;
         // add stuff here as needed
         
         return cv;
@@ -301,9 +308,8 @@ void
 cv_destroy(struct cv *cv)
 {
         KASSERT(cv != NULL);
-
+	wchan_destroy(cv->cv_wchan);
         // add stuff here as needed
-        
         kfree(cv->cv_name);
         kfree(cv);
 }
@@ -312,22 +318,48 @@ void
 cv_wait(struct cv *cv, struct lock *lock)
 {
         // Write this
-        (void)cv;    // suppress warning until code gets written
-        (void)lock;  // suppress warning until code gets written
+        KASSERT(cv != NULL);
+	//  cv_wait      - Release the supplied lock, go to sleep, and, after waking up again, re-acquire the lock.
+
+		wchan_lock(cv->cv_wchan);
+		lock_release(lock);
+                wchan_sleep(cv->cv_wchan);
+		lock_acquire(lock);
+	        cv->cv_count++;
+	
+   //     (void)cv;    // suppress warning until code gets written
+   //     (void)lock;  // suppress warning until code gets written
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
         // Write this
-	(void)cv;    // suppress warning until code gets written
+        KASSERT(cv != NULL);
+//    cv_signal    - Wake up one thread that's sleeping on this CV.
+
+	lock_acquire(lock);
+        KASSERT(cv->cv_count>0);
+	wchan_wakeone(cv->cv_wchan);
+	cv->cv_count--;
+//	lock_release(lock);
+
+
+//	(void)cv;    // suppress warning until code gets written
 	(void)lock;  // suppress warning until code gets written
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
+        KASSERT(cv != NULL);
 	// Write this
-	(void)cv;    // suppress warning until code gets written
+//	lock_acquire(lock);
+        KASSERT(cv->cv_count>0);
+	wchan_wakeall(cv->cv_wchan);
+	cv->cv_count=0;
+//	lock_release(lock);
+
+//	(void)cv;    // suppress warning until code gets written
 	(void)lock;  // suppress warning until code gets written
 }

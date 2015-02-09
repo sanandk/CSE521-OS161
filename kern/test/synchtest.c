@@ -41,7 +41,6 @@
 #define NSEMLOOPS     63
 #define NLOCKLOOPS    120
 #define NCVLOOPS      5
-#define NRWLOOPS      10
 #define NTHREADS      32
 
 static volatile unsigned long testval1;
@@ -50,7 +49,6 @@ static volatile unsigned long testval3;
 static struct semaphore *testsem;
 static struct lock *testlock;
 static struct cv *testcv;
-static struct rwlock *testrw;
 static struct semaphore *donesem;
 
 static
@@ -73,12 +71,6 @@ inititems(void)
 		testcv = cv_create("testlock");
 		if (testcv == NULL) {
 			panic("synchtest: cv_create failed\n");
-		}
-	}
-	if (testrw==NULL) {
-		testrw = rwlock_create("testrw");
-		if (testrw == NULL) {
-			panic("synchtest: rwlock_create failed\n");
 		}
 	}
 	if (donesem==NULL) {
@@ -364,80 +356,4 @@ cvtest2(int nargs, char **args)
 	kprintf("CV test done\n");
 
 	return 0;
-}
-
-static
-void
-readrwtestthread(void *junk, unsigned long num)
-{
-	int i;
-	(void)junk;
-
-	rwlock_acquire_read(testrw);
-	kprintf("\nReadThread %lu: ", num);
-	for(i=0;i<NRWLOOPS;i++)
-	{
-		kprintf("%ld ",testval2);
-	}
-	rwlock_release_read(testrw);
-
-	V(donesem);
-}
-
-static
-void
-writerwtestthread(void *junk, unsigned long num)
-{
-	int i;
-	(void)junk;
-
-	rwlock_acquire_write(testrw);
-	kprintf("\nWriteThread %lu: ", num);
-	for(i=0;i<NRWLOOPS;i++)
-	{
-		kprintf("%ld ",++testval2);
-	}
-	rwlock_release_write(testrw);
-
-	V(donesem);
-}
-
-int
-rwtest(int nargs, char **args)
-{
-	int i, result;
-
-	(void)nargs;
-	(void)args;
-
-	inititems();
-	kprintf("Starting new RW test...\n");
-	kprintf("Threads should print out in order.\n");
-	testval1 = NTHREADS-1;
-	testval2=0;
-
-	for (i=0; i<NTHREADS; i++) {
-		result = thread_fork("readrwtest", readrwtestthread, NULL, i,
-				      NULL);
-		if (result) {
-			panic("readrwtest: thread_fork failed: %s\n",
-			      strerror(result));
-		}
-	}
-
-	for (i=0; i<NTHREADS; i++) {
-		result = thread_fork("writerwtest", writerwtestthread, NULL, i,
-				      NULL);
-		if (result) {
-			panic("writerwtest: thread_fork failed: %s\n",
-			      strerror(result));
-		}
-	}
-
-	for (i=0; i<NTHREADS+NTHREADS; i++) {
-		P(donesem);
-	}
-	kprintf("\n");
-	kprintf("RW test done\n");
-	return 0;	
 }

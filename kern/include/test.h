@@ -89,7 +89,6 @@ int threadtest3(int, char **);
 int semtest(int, char **);
 int locktest(int, char **);
 int cvtest(int, char **);
-int rwtest(int, char **);
 int cvtest2(int, char **);
 
 /* filesystem tests */

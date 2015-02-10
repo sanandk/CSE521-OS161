@@ -46,8 +46,39 @@
 // 13 Feb 2012 : GWA : Adding at the suggestion of Isaac Elbaz. These
 // functions will allow you to do local initialization. They are called at
 // the top of the corresponding driver code.
+struct semaphore *malesem;
+struct semaphore *femalesem;
+struct semaphore *matchmakersem,*testsem, *testsem2, *testsem3;
+
+int male_cnt,female_cnt,match_cnt;
 
 void whalemating_init() {
+	malesem = sem_create("Whalemating Male Semaphore",0);
+	femalesem = sem_create("Whalemating Female Semaphore",0);
+	matchmakersem = sem_create("Whalemating MatchMaker Semaphore",0);
+
+	if (testsem==NULL) {
+			testsem = sem_create("testsem", 0);
+			if (testsem == NULL) {
+				panic("synchtest: sem_create failed\n");
+			}
+		}
+	if (testsem2==NULL) {
+			testsem2= sem_create("testsem2", 0);
+				if (testsem2== NULL) {
+					panic("synchtest: sem_create failed\n");
+				}
+			}
+	if (testsem3==NULL) {
+			testsem3= sem_create("testsem3", 0);
+				if (testsem3== NULL) {
+					panic("synchtest: sem_create failed\n");
+				}
+			}
+	male_cnt=0;
+	female_cnt=0;
+	match_cnt=0;
+
   return;
 }
 
@@ -63,10 +94,28 @@ male(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
   (void)which;
-  
-  male_start();
-	// Implement this function 
-  male_end();
+  	male_start();
+
+  	V(malesem);
+	P(testsem);
+
+	//P(matchmakersem);
+
+	/*V(testsem);
+	V(testsem);
+	V(testsem);
+	P(testsem);
+	*/
+	//male_cnt++;
+	male_end();
+	//V(testsem2);
+
+
+	//V(matchmakersem);
+	//V(femalesem);
+
+
+
 
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // whalemating driver can return to the menu cleanly.
@@ -79,11 +128,30 @@ female(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
   (void)which;
-  
   female_start();
-	// Implement this function 
-  female_end();
-  
+
+    V(femalesem);
+	//P(malesem);
+		P(testsem2);
+
+/*		V(testsem);
+		V(testsem);
+		V(testsem);
+		P(testsem);
+
+	V(testsem);
+		V(testsem2);
+		V(testsem2);
+		V(testsem2);
+		P(testsem2);
+*/
+	female_end();
+	/*V(testsem2);
+*/
+	//V(matchmakersem);
+	//V(malesem);
+
+
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // whalemating driver can return to the menu cleanly.
   V(whalematingMenuSemaphore);
@@ -95,11 +163,31 @@ matchmaker(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
   (void)which;
-  
-  matchmaker_start();
-	// Implement this function 
-  matchmaker_end();
-  
+    matchmaker_start();
+
+//	V(matchmakersem);
+	P(malesem);
+	P(femalesem);
+
+
+	V(testsem);
+	V(testsem2);
+	/*P(testsem);
+
+
+	V(testsem);
+	V(testsem2);
+	V(testsem2);
+	V(testsem2);
+	P(testsem2);
+*/
+	matchmaker_end();
+	/*V(testsem2);
+
+	V(femalesem);
+	V(malesem);
+*/
+
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // whalemating driver can return to the menu cleanly.
   V(whalematingMenuSemaphore);

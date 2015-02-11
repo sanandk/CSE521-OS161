@@ -206,7 +206,6 @@ lock_acquire(struct lock *lock)
         // Write this
 
 	splraise(IPL_NONE, IPL_HIGH);
-	
 
 	if (CURCPU_EXISTS()) {
 		mythread = curthread;
@@ -219,7 +218,7 @@ lock_acquire(struct lock *lock)
 	}
 
 	while (1) {
-	
+
 		if (lock_data_get(&lock->lk_lock) != 0) {
 			continue;
 		}

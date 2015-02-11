@@ -94,9 +94,8 @@ male(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
   (void)which;
-  	male_start();
-
-  	V(malesem);
+	male_start();
+	V(malesem);
 	P(testsem);
 
 	//P(matchmakersem);

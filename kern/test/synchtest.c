@@ -439,5 +439,5 @@ rwtest(int nargs, char **args)
 	}
 	kprintf("\n");
 	kprintf("RW test done\n");
-	return 0;	
+	return 0;
 }

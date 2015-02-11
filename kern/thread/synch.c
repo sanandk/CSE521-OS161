@@ -148,7 +148,7 @@ V(struct semaphore *sem)
 //
 // Lock.
 
-int lock_data_get(volatile int *d)
+/*int lock_data_get(volatile int *d)
 {
 	return *d;
 }
@@ -164,7 +164,7 @@ int lock_data_testandset(volatile int *d)
 	if(x==0)
 		*d=y;
 	return x;
-}
+}*/
 
 struct lock *
 lock_create(const char *name)
@@ -175,9 +175,8 @@ lock_create(const char *name)
         if (lock == NULL) {
                 return NULL;
         }
-	lock->lk_holder=NULL;
+        lock->lk_holder=NULL;
         lock->lk_name = kstrdup(name);
-	lock_data_set(&lock->lk_lock, 0);
         if (lock->lk_name == NULL) {
                 kfree(lock);
                 return NULL;
@@ -188,9 +187,7 @@ lock_create(const char *name)
 		kfree(lock->lk_wchan);
 		return NULL;
 	}
-
-        
-        // add stuff here as needed
+	spinlock_init(&lock->lk_slock);
         
         return lock;
 }
@@ -201,7 +198,7 @@ lock_destroy(struct lock *lock)
         KASSERT(lock != NULL);
 	wchan_destroy(lock->lk_wchan);
         // add stuff here as needed
-        
+	spinlock_cleanup(&lock->lk_slock);
         kfree(lock->lk_name);
         kfree(lock);
 }
@@ -214,34 +211,22 @@ lock_acquire(struct lock *lock)
 	KASSERT(lock!=NULL);
 	splraise(IPL_NONE, IPL_HIGH);
 
-	if (CURCPU_EXISTS()) 
-	{
-		mythread = curthread;
-		if (lock->lk_holder == mythread) {
-			panic("Deadlock on lock %p\n", lock);
-		}
-	}
 	if(lock_do_i_hold(lock))
 		panic("Deadlock on lock %p\n", lock);
-	while (lock_data_get(&lock->lk_lock) != 0) {
+
+	mythread = curthread;
+	spinlock_acquire(&lock->lk_slock);
+	while (lock->lk_holder!=NULL) {
 
 		wchan_lock(lock->lk_wchan);
-	        wchan_sleep(lock->lk_wchan);
-/*
-		if (lock_data_get(&lock->lk_lock) != 0) {
-			continue;
-		}
-		if (lock_data_testandset(&lock->lk_lock) != 0) {
-			continue;
-		}
-		break;
-*/
+		spinlock_release(&lock->lk_slock);
+		wchan_sleep(lock->lk_wchan);
+		spinlock_acquire(&lock->lk_slock);
 	}
-
 	lock->lk_holder = mythread;
-
+	spinlock_release(&lock->lk_slock);
 	spllower(IPL_HIGH, IPL_NONE);
-       (void)lock;  // suppress warning until code gets written
+       //(void)lock;  // suppress warning until code gets written
 }
 
 void
@@ -249,17 +234,14 @@ lock_release(struct lock *lock)
 {
 	splraise(IPL_NONE, IPL_HIGH);
 // this must work before curcpu initialization
-	if (lock->lk_holder!=NULL) 
-	{
-//		KASSERT(lock_do_i_hold(lock));
-	}
-		//KASSERT(lock_do_i_hold(lock));
+
+	spinlock_acquire(&lock->lk_slock);
 	if(lock_do_i_hold(lock))
 	{
 	lock->lk_holder = NULL;
-	lock_data_set(&lock->lk_lock, 0);
 	wchan_wakeone(lock->lk_wchan);
 	}
+	spinlock_release(&lock->lk_slock);
 	spllower(IPL_HIGH, IPL_NONE);
 
         // Write this
@@ -269,12 +251,7 @@ lock_release(struct lock *lock)
 
 bool lock_do_i_hold(struct lock *lock)
 {
-        // Write this
-
-	if (!CURCPU_EXISTS()) {
-		return true;
-	}
-		KASSERT(lock!=NULL);
+	KASSERT(lock!=NULL);
 	/* Assume we can read lk_holder atomically enough for this to work */
 	return (lock->lk_holder == curthread);
 
@@ -331,11 +308,11 @@ cv_wait(struct cv *cv, struct lock *lock)
         // Write this
         KASSERT(cv != NULL);
 	//  cv_wait      - Release the supplied lock, go to sleep, and, after waking up again, re-acquire the lock.
-//	KASSERT(lock_do_i_hold(lock));
+	KASSERT(lock_do_i_hold(lock));
 		wchan_lock(cv->cv_wchan);
-//		lock_release(lock);
+		lock_release(lock);
 	        wchan_sleep(cv->cv_wchan);
-//		lock_acquire(lock);
+		lock_acquire(lock);
 	        //cv->cv_count++;
 
    //     (void)cv;    // suppress warning until code gets written
@@ -390,18 +367,7 @@ struct rwlock * rwlock_create(const char *name)
                 kfree(rw);
                 return NULL;
         }
-        rw->rw_m = kmalloc(sizeof(struct lock));
-                if (rw->rw_m == NULL) {
-                        return NULL;
-                }
-
-        rw->rw_m->lk_name = kstrdup(name);
-	lock_data_set(&rw->rw_m->lk_lock, 0);
-
-        if (rw->rw_m->lk_name == NULL) {
-                kfree(rw->rw_m);
-                return NULL;
-        }
+        rw->rw_lock= lock_create(name);
 
 	if (rw->turn==NULL) {
 		rw->turn = cv_create(name);
@@ -422,7 +388,7 @@ void rwlock_destroy(struct rwlock *rw)
 
         // add stuff here as needed
         kfree(rw->rwlock_name);
-        kfree(rw->rw_m);
+        kfree(rw->rw_lock);
         kfree(rw->turn);
         kfree(rw);
 
@@ -430,13 +396,13 @@ void rwlock_destroy(struct rwlock *rw)
 
 void rwlock_acquire_read(struct rwlock *rw)
 {
-		lock_acquire(rw->rw_m);
+		lock_acquire(rw->rw_lock);
 		if(rw->writers>0)
-			cv_wait(rw->turn, rw->rw_m);
+			cv_wait(rw->turn, rw->rw_lock);
 		while(rw->writing)
-			cv_wait(rw->turn, rw->rw_m);
+			cv_wait(rw->turn, rw->rw_lock);
 		rw->reading++;
-		lock_release(rw->rw_m);
+		lock_release(rw->rw_lock);
 
 		// Read goes on here
 
@@ -444,29 +410,29 @@ void rwlock_acquire_read(struct rwlock *rw)
 
 void rwlock_release_read(struct rwlock *rw)
 {
-		lock_acquire(rw->rw_m);
+		lock_acquire(rw->rw_lock);
 		rw->reading--;
-		cv_broadcast(rw->turn,rw->rw_m);
-		lock_release(rw->rw_m);
+		cv_broadcast(rw->turn,rw->rw_lock);
+		lock_release(rw->rw_lock);
 }
 
 void rwlock_acquire_write(struct rwlock *rw)
 {
-		lock_acquire(rw->rw_m);
+		lock_acquire(rw->rw_lock);
 		rw->writers++;
 		while(rw->writing || rw->reading)
-			cv_wait(rw->turn, rw->rw_m);
+			cv_wait(rw->turn, rw->rw_lock);
 		rw->writing++;
-		lock_release(rw->rw_m);
+		lock_release(rw->rw_lock);
 
 		// Write goes on here
 }
 
 void rwlock_release_write(struct rwlock *rw)
 {
-		lock_acquire(rw->rw_m);
+		lock_acquire(rw->rw_lock);
 		rw->writing--;
 		rw->writers--;
-		cv_broadcast(rw->turn,rw->rw_m);
-		lock_release(rw->rw_m);
+		cv_broadcast(rw->turn,rw->rw_lock);
+		lock_release(rw->rw_lock);
 }

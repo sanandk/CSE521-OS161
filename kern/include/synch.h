@@ -74,10 +74,10 @@ void V(struct semaphore *);
  */
 struct lock {
         char *lk_name;
-	volatile int lk_lock;	//lock data
+//	volatile int lk_lock;	//lock data
 	struct thread *lk_holder;	//CPU holding this lock
 	struct wchan *lk_wchan;
-
+	struct spinlock lk_slock;
         // add what you need here
         // (don't forget to mark things volatile as needed)
 };
@@ -152,10 +152,10 @@ void cv_broadcast(struct cv *cv, struct lock *lock);
 
 struct rwlock {
         char *rwlock_name;
-	struct cv *turn;
+        struct cv *turn;
         volatile int writing, reading;
         volatile int writers;
-	struct lock *rw_m;
+        struct lock *rw_lock;
 };
 
 struct rwlock * rwlock_create(const char *);

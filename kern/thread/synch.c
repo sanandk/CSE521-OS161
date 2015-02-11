@@ -237,8 +237,7 @@ lock_acquire(struct lock *lock)
 void
 lock_release(struct lock *lock)
 {
-    
-// this must work before curcpu initialization 
+// this must work before curcpu initialization
 	if (CURCPU_EXISTS()) {
 		KASSERT(lock->lk_holder == curthread);
 	}
@@ -250,7 +249,6 @@ lock_release(struct lock *lock)
 
         // Write this
 
-    
     //(void)lock;  // suppress warning until code gets written
 }
 
@@ -259,7 +257,7 @@ lock_do_i_hold(struct lock *lock)
 {
         // Write this
 
-    	if (!CURCPU_EXISTS()) {
+	if (!CURCPU_EXISTS()) {
 		return true;
 	}
 
@@ -325,7 +323,7 @@ cv_wait(struct cv *cv, struct lock *lock)
         wchan_sleep(cv->cv_wchan);
 		lock_acquire(lock);
 	        //cv->cv_count++;
-	
+
    //     (void)cv;    // suppress warning until code gets written
    //     (void)lock;  // suppress warning until code gets written
 }

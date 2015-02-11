@@ -175,13 +175,20 @@ lock_create(const char *name)
         if (lock == NULL) {
                 return NULL;
         }
-
+	lock->lk_holder=NULL;
         lock->lk_name = kstrdup(name);
 	lock_data_set(&lock->lk_lock, 0);
         if (lock->lk_name == NULL) {
                 kfree(lock);
                 return NULL;
         }
+
+	lock->lk_wchan = wchan_create(name);
+	if (lock->lk_wchan == NULL) {
+		kfree(lock->lk_wchan);
+		return NULL;
+	}
+
         
         // add stuff here as needed
         
@@ -192,7 +199,7 @@ void
 lock_destroy(struct lock *lock)
 {
         KASSERT(lock != NULL);
-
+	wchan_destroy(lock->lk_wchan);
         // add stuff here as needed
         
         kfree(lock->lk_name);
@@ -204,21 +211,23 @@ lock_acquire(struct lock *lock)
 {
 	struct thread *mythread;
         // Write this
-
+	KASSERT(lock!=NULL);
 	splraise(IPL_NONE, IPL_HIGH);
 
-	if (CURCPU_EXISTS()) {
+	if (CURCPU_EXISTS()) 
+	{
 		mythread = curthread;
 		if (lock->lk_holder == mythread) {
 			panic("Deadlock on lock %p\n", lock);
 		}
 	}
-	else {
-		mythread = NULL;
-	}
+	if(lock_do_i_hold(lock))
+		panic("Deadlock on lock %p\n", lock);
+	while (lock_data_get(&lock->lk_lock) != 0) {
 
-	while (1) {
-
+		wchan_lock(lock->lk_wchan);
+	        wchan_sleep(lock->lk_wchan);
+/*
 		if (lock_data_get(&lock->lk_lock) != 0) {
 			continue;
 		}
@@ -226,46 +235,51 @@ lock_acquire(struct lock *lock)
 			continue;
 		}
 		break;
-}
+*/
+	}
 
 	lock->lk_holder = mythread;
 
-
-   //     (void)lock;  // suppress warning until code gets written
+	spllower(IPL_HIGH, IPL_NONE);
+       (void)lock;  // suppress warning until code gets written
 }
 
 void
 lock_release(struct lock *lock)
 {
+	splraise(IPL_NONE, IPL_HIGH);
 // this must work before curcpu initialization
-	if (CURCPU_EXISTS()) {
-		KASSERT(lock->lk_holder == curthread);
+	if (lock->lk_holder!=NULL) 
+	{
+//		KASSERT(lock_do_i_hold(lock));
 	}
-
+		//KASSERT(lock_do_i_hold(lock));
+	if(lock_do_i_hold(lock))
+	{
 	lock->lk_holder = NULL;
 	lock_data_set(&lock->lk_lock, 0);
-
+	wchan_wakeone(lock->lk_wchan);
+	}
 	spllower(IPL_HIGH, IPL_NONE);
 
         // Write this
 
-    //(void)lock;  // suppress warning until code gets written
+//    (void)lock;  // suppress warning until code gets written
 }
 
-bool
-lock_do_i_hold(struct lock *lock)
+bool lock_do_i_hold(struct lock *lock)
 {
         // Write this
 
 	if (!CURCPU_EXISTS()) {
 		return true;
 	}
-
+		KASSERT(lock!=NULL);
 	/* Assume we can read lk_holder atomically enough for this to work */
 	return (lock->lk_holder == curthread);
 
-
-//        return true; // dummy until code gets written
+//(void)lock;
+        return true; // dummy until code gets written
 }
 
 ////////////////////////////////////////////////////////////
@@ -317,15 +331,15 @@ cv_wait(struct cv *cv, struct lock *lock)
         // Write this
         KASSERT(cv != NULL);
 	//  cv_wait      - Release the supplied lock, go to sleep, and, after waking up again, re-acquire the lock.
-
+//	KASSERT(lock_do_i_hold(lock));
 		wchan_lock(cv->cv_wchan);
-		lock_release(lock);
-        wchan_sleep(cv->cv_wchan);
-		lock_acquire(lock);
+//		lock_release(lock);
+	        wchan_sleep(cv->cv_wchan);
+//		lock_acquire(lock);
 	        //cv->cv_count++;
 
    //     (void)cv;    // suppress warning until code gets written
-   //     (void)lock;  // suppress warning until code gets written
+        (void)lock;  // suppress warning until code gets written
 }
 
 void
@@ -334,12 +348,12 @@ cv_signal(struct cv *cv, struct lock *lock)
         // Write this
         KASSERT(cv != NULL);
 //    cv_signal    - Wake up one thread that's sleeping on this CV.
-
-        lock_acquire(lock);
+//	KASSERT(lock_do_i_hold(lock));
+//        lock_acquire(lock);
         //KASSERT(cv->cv_count>0);
         wchan_wakeone(cv->cv_wchan);
 	//cv->cv_count--;
-        lock_release(lock);
+//        lock_release(lock);
 
 
 //	(void)cv;    // suppress warning until code gets written
@@ -350,6 +364,7 @@ void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
         KASSERT(cv != NULL);
+//	KASSERT(lock_do_i_hold(lock));
 	// Write this
 //	lock_acquire(lock);
         //KASSERT(cv->cv_count>0);

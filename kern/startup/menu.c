@@ -447,6 +447,7 @@ static const char *testmenu[] = {
 	"[net] Network test                  ",
 #endif
 	"[sy1] Semaphore test                ",
+	"[rw] RW test                    ",
 	"[sy2] Lock test             (1)     ",
 	"[sy3] CV test               (1)     ",
 	"[sy5] CV test 2             (1)     ",
@@ -542,7 +543,7 @@ static struct {
 	{ "tt2",	threadtest2 },
 	{ "tt3",	threadtest3 },
 	{ "sy1",	semtest },
-
+	{ "rw",	rwtest },
 	/* synchronization assignment tests */
 	{ "sy2",	locktest },
 	{ "sy3",	cvtest },

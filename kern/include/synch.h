@@ -76,6 +76,7 @@ struct lock {
         char *lk_name;
 	volatile int lk_lock;	//lock data
 	struct thread *lk_holder;	//CPU holding this lock
+	struct wchan *lk_wchan;
 
         // add what you need here
         // (don't forget to mark things volatile as needed)

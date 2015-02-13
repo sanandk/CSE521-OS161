@@ -375,8 +375,9 @@ struct rwlock * rwlock_create(const char *name)
 			panic("synchtest: cv_create failed for rw\n");
 		}
 	}
-
+	rw->rw_sem = sem_create("RW Read Semaphore",0);
 	rw->reading = 0;
+	rw->current_turn=-1;
 	rw->writers = 0;
 	rw->writing = 0;
 
@@ -397,11 +398,23 @@ void rwlock_destroy(struct rwlock *rw)
 void rwlock_acquire_read(struct rwlock *rw)
 {
 		lock_acquire(rw->rw_lock);
+//		if(rw->reading>5)
+	//				cv_wait(rw->turn,rw->rw_lock);
 		if(rw->writers>0)
 			cv_wait(rw->turn, rw->rw_lock);
 		while(rw->writing)
 			cv_wait(rw->turn, rw->rw_lock);
+		//P(rw->rw_sem->sem_);
+/*		while(rw->reading>10 && rw->current_turn==0)
+		{
+			cv_broadcast(rw->turn,rw->rw_lock);
+			cv_wait(rw->turn, rw->rw_lock);
+		}
+		*/
+		//P(rw->rw_sem);
+		rw->current_turn=0;
 		rw->reading++;
+
 		lock_release(rw->rw_lock);
 
 		// Read goes on here
@@ -423,6 +436,7 @@ void rwlock_acquire_write(struct rwlock *rw)
 		while(rw->writing || rw->reading)
 			cv_wait(rw->turn, rw->rw_lock);
 		rw->writing++;
+		rw->current_turn=1;
 		lock_release(rw->rw_lock);
 
 		// Write goes on here
@@ -433,6 +447,12 @@ void rwlock_release_write(struct rwlock *rw)
 		lock_acquire(rw->rw_lock);
 		rw->writing--;
 		rw->writers--;
+
+		V(rw->rw_sem);
+		V(rw->rw_sem);
+		V(rw->rw_sem);
+		V(rw->rw_sem);
+		V(rw->rw_sem);
 		cv_broadcast(rw->turn,rw->rw_lock);
 		lock_release(rw->rw_lock);
 }

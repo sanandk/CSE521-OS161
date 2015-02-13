@@ -156,6 +156,8 @@ struct rwlock {
         volatile int writing, reading;
         volatile int writers;
         struct lock *rw_lock;
+        struct semaphore *rw_sem;
+        int current_turn; // 0 for readers,1 for writers
 };
 
 struct rwlock * rwlock_create(const char *);

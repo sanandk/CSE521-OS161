@@ -416,7 +416,7 @@ rwtest(int nargs, char **args)
 	testval1 = NTHREADS-1;
 	testval2=0;
 
-	for (i=0; i<NTHREADS; i++) {
+	for (i=0; i<NTHREADS*2; i++) {
 		result = thread_fork("readrwtest", readrwtestthread, NULL, i,
 				      NULL);
 		if (result) {

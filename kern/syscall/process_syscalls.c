@@ -27,17 +27,42 @@
  * SUCH DAMAGE.
  */
 
-#include <unistd.h>
-/*
- * reboot - shut down system and reboot it.
- * Usage: reboot
- *
- * Just calls reboot() with the RB_REBOOT flag.
- */
 
+
+#include <types.h>
+#include <thread.h>
+#include <kern/errno.h>
+#include <synch.h>
+#include <uio.h>
+#include <syscall.h>
+#include <lib.h>
+#include <vnode.h>
+#include <vfs.h>
+#include <kern/fcntl.h>
+#include <current.h>
+#include <kern/wait.h>
+
+
+/*
+ * sys_getpid system call: get current process id
+ */
 int
-main()
+sys___getpid(int *ret)
 {
-	reboot(RB_REBOOT);
+
+	*ret=curthread->process_id;
+	return 0;
+}
+
+/*
+ * sys_exit system call: exit process
+ */
+int
+sys___exit(int code)
+{
+	V(curthread->exit_sem);
+	curthread->exit_code=_MKWAIT_EXIT(code);
+
+	thread_exit();
 	return 0;
 }

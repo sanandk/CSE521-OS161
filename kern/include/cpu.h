@@ -54,6 +54,8 @@ struct cpu {
 	unsigned c_number;		/* This cpu's cpu number */
 	unsigned c_hardware_number;	/* Hardware-defined cpu number */
 
+	pid_t c_processcount;	/* for PID allocation */
+
 	/*
 	 * Accessed only by this cpu.
 	 */
@@ -68,6 +70,7 @@ struct cpu {
 	bool c_isidle;			/* True if this cpu is idle */
 	struct threadlist c_runqueue;	/* Run queue for this cpu */
 	struct spinlock c_runqueue_lock;
+
 
 	/*
 	 * Accessed by other cpus.

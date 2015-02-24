@@ -58,6 +58,13 @@ runprogram(char *progname)
 	vaddr_t entrypoint, stackptr;
 	int result;
 
+	if(curthread->f_handles[0]==NULL)
+		{
+		result=std_open(0,O_RDONLY);
+		result=std_open(1,O_WRONLY);
+		result=std_open(2,O_WRONLY);
+		}
+
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
 	if (result) {

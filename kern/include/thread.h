@@ -36,6 +36,7 @@
  * Note: curthread is defined by <current.h>.
  */
 
+#include <limits.h>
 #include <spinlock.h>
 #include <threadlist.h>
 
@@ -64,6 +65,17 @@ typedef enum {
 	S_SLEEP,	/* sleeping */
 	S_ZOMBIE,	/* zombie; exited but not yet deleted */
 } threadstate_t;
+
+
+/* ASST2 - File Handle Structure */
+struct file_handle {
+	char *file_name;
+	mode_t op_flags;
+	off_t file_offset;
+	struct vnode *file_ref;
+	struct lock *file_lock;
+	int file_counter;
+};
 
 /* Thread structure. */
 struct thread {
@@ -111,8 +123,18 @@ struct thread {
 	/* VFS */
 	struct vnode *t_cwd;		/* current working directory */
 
+	/* ASST2 Additions   */
+	int priority;	/* 1- low, 2-med, 3-high */
+	pid_t process_id;
+	int exit_code;
+	struct semaphore *exit_sem;
+	int fd_count;
+	struct file_handle *f_handles[OPEN_MAX];	/* Pointer to file handles */
+
 	/* add more here as needed */
 };
+
+pid_t pid_allocate(void);
 
 /* Call once during system startup to allocate data structures. */
 void thread_bootstrap(void);
@@ -139,6 +161,8 @@ int thread_fork(const char *name,
                 void (*func)(void *, unsigned long),
                 void *data1, unsigned long data2, 
                 struct thread **ret);
+
+
 
 /*
  * Cause the current thread to exit.

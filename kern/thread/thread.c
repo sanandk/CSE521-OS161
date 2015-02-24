@@ -33,6 +33,7 @@
 
 #include <types.h>
 #include <kern/errno.h>
+#include <kern/fcntl.h>
 #include <lib.h>
 #include <array.h>
 #include <cpu.h>
@@ -47,7 +48,7 @@
 #include <addrspace.h>
 #include <mainbus.h>
 #include <vnode.h>
-
+#include <vfs.h>
 #include "opt-synchprobs.h"
 #include "opt-defaultscheduler.h"
 
@@ -113,6 +114,8 @@ thread_checkstack(struct thread *thread)
  * Create a thread. This is used both to create a first thread
  * for each CPU and to create subsequent forked threads.
  */
+
+
 static
 struct thread *
 thread_create(const char *name)
@@ -125,6 +128,12 @@ thread_create(const char *name)
 	if (thread == NULL) {
 		return NULL;
 	}
+	thread->process_id=pid_allocate();
+	thread->exit_sem=sem_create(name,0);
+	thread->priority=2;
+	thread->fd_count=0;
+	*(thread->f_handles)= NULL;
+
 
 	thread->t_name = kstrdup(name);
 	if (thread->t_name == NULL) {
@@ -176,7 +185,7 @@ cpu_create(unsigned hardware_number)
 	if (c == NULL) {
 		panic("cpu_create: Out of memory\n");
 	}
-	
+	c->c_processcount=PID_MIN+1;
 	c->c_self = c;
 	c->c_hardware_number = hardware_number;
 
@@ -464,6 +473,45 @@ thread_make_runnable(struct thread *target, bool already_have_lock)
 		spinlock_release(&targetcpu->c_runqueue_lock);
 	}
 }
+
+pid_t pid_allocate()
+{
+	(void)curcpu->c_processcount;
+	(void)curthread;
+	(void)curthread->t_stack;
+	if(!CURCPU_EXISTS())
+	{
+		return PID_MIN;
+	}
+	pid_t new_pid=curcpu->c_processcount;
+
+	if(new_pid==-1)
+	{
+		int cnt=PID_MIN,flag=1;
+		struct threadlistnode ptr=curcpu->c_runqueue.tl_head;
+		while(flag)
+		{
+			if(ptr.tln_self == curcpu->c_runqueue.tl_tail.tln_self)
+				flag=0;
+			if(ptr.tln_self->process_id==cnt)
+			{
+				cnt++;
+				ptr=*(ptr.tln_next);
+			}
+			else
+				break;
+		}
+		new_pid=cnt;
+	}
+
+	if(curcpu->c_processcount==PID_MAX)
+		curcpu->c_processcount=-1;
+	else
+		curcpu->c_processcount++;
+
+	return new_pid;
+}
+
 
 /*
  * Create a new thread based on an existing one.

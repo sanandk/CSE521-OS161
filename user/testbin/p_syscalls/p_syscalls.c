@@ -27,17 +27,25 @@
  * SUCH DAMAGE.
  */
 
-#include <unistd.h>
 /*
- * reboot - shut down system and reboot it.
- * Usage: reboot
+ * Simple program to add two numbers (given in as arguments). Used to
+ * test argument passing to child processes.
  *
- * Just calls reboot() with the RB_REBOOT flag.
+ * Intended for the basic system calls assignment; this should work
+ * once execv() argument handling is implemented.
  */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 int
 main()
 {
-	reboot(RB_REBOOT);
+
+	//(void *)argc;
+	//(void *)argv;
+	printf("Answer: %d\n", getpid());
+
 	return 0;
 }

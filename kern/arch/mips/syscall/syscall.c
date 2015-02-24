@@ -104,10 +104,46 @@ syscall(struct trapframe *tf)
 		err = sys_reboot(tf->tf_a0);
 		break;
 
+	    case SYS__exit:
+		err = sys___exit((int)tf->tf_a0);
+		break;
+
 	    case SYS___time:
 		err = sys___time((userptr_t)tf->tf_a0,
 				 (userptr_t)tf->tf_a1);
 		break;
+
+	    case SYS_getpid:
+	    err=sys___getpid(&retval);
+	    break;
+
+	    case SYS_open:
+			err=sys___open(&retval,(char *)tf->tf_a0,
+								 (mode_t)tf->tf_a1,
+								 (int)tf->tf_a2);
+			break;
+	    case SYS_close:
+			err=sys___close(&retval,(int)tf->tf_a0);
+			break;
+
+	    case SYS_write:
+			err=sys___write(&retval,(int)tf->tf_a0,
+								 (void *)tf->tf_a1,
+								 (size_t)tf->tf_a2);
+			break;
+	    case SYS_read:
+			err=sys___read(&retval,(int)tf->tf_a0,
+								 (void *)tf->tf_a1,
+								 (size_t)tf->tf_a2);
+			break;
+
+	    case SYS_dup2:
+			err=sys___dup2(&retval,(int)tf->tf_a0,
+								 (int)tf->tf_a1);
+			break;
+	    case SYS_chdir:
+			err=sys___chdir(&retval,(char *)tf->tf_a0);
+			break;
 
 	    /* Add stuff here */
  

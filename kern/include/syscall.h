@@ -54,8 +54,23 @@ void enter_new_process(int argc, userptr_t argv, vaddr_t stackptr,
 /*
  * Prototypes for IN-KERNEL entry points for system call implementations.
  */
-
+int std_open(int fd, int flags);
 int sys_reboot(int code);
+int sys___exit(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
+
+int sys___getpid(int *ret);
+int
+sys___open(int *, char *, int , mode_t);
+int
+sys___read(int *ret, int fd, void *buf, size_t bufsize);
+int
+sys___write(int *ret, int fd, void *buf, size_t bufsize);
+int
+sys___close(int *ret, int fd);
+int
+sys___dup2(int *ret, int , int );
+int
+sys___chdir(int *ret, char *);
 
 #endif /* _SYSCALL_H_ */

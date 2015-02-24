@@ -60,9 +60,9 @@ sys___getpid(int *ret)
 int
 sys___exit(int code)
 {
-	V(curthread->exit_sem);
 	curthread->exit_code=_MKWAIT_EXIT(code);
-
+	V(curthread->exit_sem);
 	thread_exit();
+
 	return 0;
 }

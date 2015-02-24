@@ -72,5 +72,8 @@ int
 sys___dup2(int *ret, int , int );
 int
 sys___chdir(int *ret, char *);
-
+int
+sys___getcwd(int *ret, char *buf, size_t buflen);
+int
+sys___lseek(int *,int *, int fd, off_t offset, int whence);
 #endif /* _SYSCALL_H_ */

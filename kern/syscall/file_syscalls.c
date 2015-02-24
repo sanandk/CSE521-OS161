@@ -39,6 +39,8 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <kern/fcntl.h>
+#include <kern/seek.h>
+#include <kern/stat.h>
 #include <current.h>
 #include <kern/wait.h>
 
@@ -293,4 +295,85 @@ sys___chdir(int *ret, char *dirname)
 		}
 		*ret=0;
 		return 0;
+}
+int
+sys___getcwd(int *ret, char *buf, size_t buflen)
+{
+	struct iovec iov;
+	struct uio ku;
+
+	uio_kinit(&iov, &ku, buf, buflen, 0, UIO_READ);
+	int result = vfs_getcwd(&ku);
+	if (result) {
+		*ret=-1;
+		return result;
+	}
+
+	/* null terminate */
+	buf[sizeof(buf)-1-ku.uio_resid] = 0;
+	*ret=strlen(buf);
+	return 0;
+}
+int
+sys___lseek(int *ret,int *ret2, int fd, off_t offset, int whence)
+{
+	off_t new_pos,fsize;
+	if(fd<0 || fd>OPEN_MAX || curthread->f_handles[fd]==NULL)
+	{
+		*ret=-1;
+		return EBADF;
+	}
+	if(fd>=0 && fd<3)
+	{
+		*ret=-1;
+		return ESPIPE;
+	}
+
+	struct stat fs;
+
+	lock_acquire(curthread->f_handles[fd]->file_lock);
+	int result=VOP_STAT(curthread->f_handles[fd]->file_ref,&fs);
+	if(result)
+	{
+		*ret=-1;
+		lock_release(curthread->f_handles[fd]->file_lock);
+		return result;
+	}
+	fsize=fs.st_size;
+	switch(whence)
+	{
+	case SEEK_SET:
+		new_pos=offset;
+		break;
+	case SEEK_END:
+		new_pos=fsize+offset;
+		break;
+	case SEEK_CUR:
+		new_pos=curthread->f_handles[fd]->file_offset+offset;
+		break;
+	default:	*ret=-1;
+		lock_release(curthread->f_handles[fd]->file_lock);
+		return EINVAL;
+	}
+	if(new_pos<0)
+	{
+		*ret=-1;
+		lock_release(curthread->f_handles[fd]->file_lock);
+		return EINVAL;
+	}
+	result=VOP_TRYSEEK(curthread->f_handles[fd]->file_ref,new_pos);
+	if(result)
+	{
+		*ret=-1;
+		lock_release(curthread->f_handles[fd]->file_lock);
+		return result;
+	}
+	curthread->f_handles[fd]->file_offset=new_pos;
+
+	lock_release(curthread->f_handles[fd]->file_lock);
+
+	*ret=(new_pos & 0xFFFFFFFF00000000) >> 32;
+	*ret2=new_pos & 0xFFFFFFFF;
+
+	return 0;
 }

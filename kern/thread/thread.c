@@ -55,7 +55,6 @@
 
 /* Magic number used as a guard value on kernel thread stacks. */
 #define THREAD_STACK_MAGIC 0xbaadf00d
-
 /* Wait channel. */
 struct wchan {
 	const char *wc_name;		/* name for this channel */
@@ -191,6 +190,7 @@ cpu_create(unsigned hardware_number)
 
 	c->c_curthread = NULL;
 	threadlist_init(&c->c_zombies);
+	c->pcount=0;
 	c->c_hardclocks = 0;
 
 	c->c_isidle = false;
@@ -485,7 +485,7 @@ pid_t pid_allocate()
 	}
 	pid_t new_pid=curcpu->c_processcount;
 
-	if(new_pid==-1)
+	/*if(new_pid==-1)
 	{
 		int cnt=PID_MIN,flag=1;
 		struct threadlistnode ptr=curcpu->c_runqueue.tl_head;
@@ -502,7 +502,7 @@ pid_t pid_allocate()
 				break;
 		}
 		new_pid=cnt;
-	}
+	}*/
 
 	if(curcpu->c_processcount==PID_MAX)
 		curcpu->c_processcount=-1;
@@ -536,6 +536,7 @@ thread_fork(const char *name,
 	if (newthread == NULL) {
 		return ENOMEM;
 	}
+
 
 	/* Allocate a stack */
 	newthread->t_stack = kmalloc(STACK_SIZE);
@@ -586,6 +587,12 @@ thread_fork(const char *name,
 
 	/* Set up the switchframe so entrypoint() gets called */
 	switchframe_init(newthread, entrypoint, data1, data2);
+
+	curcpu->plist[curcpu->pcount]=kmalloc(sizeof(struct process));
+	curcpu->plist[curcpu->pcount]->pid=newthread->process_id;
+	curcpu->plist[curcpu->pcount]->exitcode=-999;
+	curcpu->plist[curcpu->pcount]->esem=newthread->exit_sem;
+	curcpu->plist[curcpu->pcount++]->tptr=newthread;
 
 	/* Lock the current cpu's run queue and make the new thread runnable */
 	thread_make_runnable(newthread, false);

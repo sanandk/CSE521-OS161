@@ -45,7 +45,7 @@
 #include <threadlist.h>
 #include <current.h>
 #include <kern/wait.h>
-
+#include <copyinout.h>
 #include <cpu.h>
 
 
@@ -71,50 +71,46 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 			return ECHILD;
 	if(status==NULL)
 			return EFAULT;
+	size_t stoplen;
+	int res=copycheck2((const_userptr_t) status, sizeof(int), &stoplen);
+	if(res)
+			return EFAULT;
+
 	if(options!=0)
 			return EINVAL;
 	if(pid<PID_MIN || pid>PID_MAX)
 			return ESRCH;
-
+	res=copyout((const void *)&curthread->exit_code,(userptr_t)status,sizeof(int));
+	if(res)
+		return EFAULT;
+	int i,excode;
 	struct thread *wthread=NULL;
 
-	// Look for non-exited threads
-	struct threadlistnode ptr=curcpu->c_runqueue.tl_head;
-			while(1)
-			{
-				if(ptr.tln_self == curcpu->c_runqueue.tl_tail.tln_self)
-					break;
-				if(ptr.tln_self->process_id==pid)
-				{
-					wthread=ptr.tln_self;
-					break;
-				}
-				ptr=*(ptr.tln_next);
-			}
-
-	if(wthread==NULL)
-	{
-		// Look for zombies (exited threads)
-		struct threadlistnode ptr=curcpu->c_zombies.tl_head;
-		while(1)
+	for(i=0;i<curcpu->pcount;i++)
+		if(curcpu->plist[i]->pid==pid)
 		{
-			if(ptr.tln_self == curcpu->c_zombies.tl_tail.tln_self)
-				break;
-			if(ptr.tln_self->process_id==pid)
-			{
-				wthread=ptr.tln_self;
-				break;
-			}
-			ptr=*(ptr.tln_next);
+			wthread=curcpu->plist[i]->tptr;
+			break;
 		}
-	}
-	else
-		P(wthread->exit_sem);
-
-	if(wthread==NULL)
+	if(i==curcpu->pcount)
 		return ESRCH;
+	if(curcpu->plist[i]->exitcode == -999){
+			P(curcpu->plist[i]->esem);
+			excode=wthread->exit_code;
+		}
+		else
+			excode=curcpu->plist[i]->exitcode;
 
-	*ret=wthread->exit_code;
+	if(wthread==NULL && i>=curcpu->pcount)
+	{
+		return ESRCH;
+	}
+
+
+	res=copyout((const void *)&excode,(userptr_t)status,sizeof(int));
+	if(res)
+		return res;
+	*ret=pid;
 	return 0;
 }
 
@@ -154,7 +150,6 @@ sys___fork(int *ret,struct trapframe * tf)
 	if(result)
 		return result;
 
-
 	*ret=child_thread->process_id;
 	return 0;
 }
@@ -166,6 +161,13 @@ int
 sys___exit(int code)
 {
 	curthread->exit_code=_MKWAIT_EXIT(code);
+	for(int i=0;i<curcpu->pcount;i++)
+		if(curcpu->plist[i]->pid==curthread->process_id)
+		{
+				curcpu->plist[i]->exitcode=curthread->exit_code;
+				break;
+		}
+
 	V(curthread->exit_sem);
 	thread_exit();
 

@@ -79,6 +79,7 @@ struct file_handle {
 
 /* Thread structure. */
 struct thread {
+
 	/*
 	 * These go up front so they're easy to get to even if the
 	 * debugger is messed up.

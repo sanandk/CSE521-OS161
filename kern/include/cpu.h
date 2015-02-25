@@ -33,6 +33,7 @@
 
 #include <spinlock.h>
 #include <threadlist.h>
+#include <limits.h>
 #include <machine/vm.h>  /* for TLBSHOOTDOWN_MAX */
 
 
@@ -45,6 +46,13 @@
  * (as opposed to merely dereferencing it) in case curcpu is defined as
  * a pointer with a fixed address and a per-cpu mapping in the MMU.
  */
+
+struct process {
+	struct thread *tptr;
+	int exitcode;
+	struct semaphore *esem;
+	pid_t pid;
+};
 
 struct cpu {
 	/*
@@ -71,6 +79,8 @@ struct cpu {
 	struct threadlist c_runqueue;	/* Run queue for this cpu */
 	struct spinlock c_runqueue_lock;
 
+	int pcount;
+	struct process *plist[PID_MAX];
 
 	/*
 	 * Accessed by other cpus.

@@ -30,6 +30,10 @@
 #ifndef _SYSCALL_H_
 #define _SYSCALL_H_
 
+#include <limits.h>
+
+	int pcount;
+	struct process *plist[PID_MAX];
 
 struct trapframe; /* from <machine/trapframe.h> */
 

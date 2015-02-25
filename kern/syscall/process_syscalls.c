@@ -83,25 +83,25 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 	res=copyout((const void *)&curthread->exit_code,(userptr_t)status,sizeof(int));
 	if(res)
 		return EFAULT;
-	int i,excode;
+	int i,excode=0;
 	struct thread *wthread=NULL;
-
-	for(i=0;i<curcpu->pcount;i++)
-		if(curcpu->plist[i]->pid==pid)
+	for(i=0;i<pcount;i++)
+		if(plist[i]->pid==pid)
 		{
-			wthread=curcpu->plist[i]->tptr;
+			wthread=plist[i]->tptr;
 			break;
 		}
-	if(i==curcpu->pcount)
+	if(i==pcount)
 		return ESRCH;
-	if(curcpu->plist[i]->exitcode == -999){
-			P(curcpu->plist[i]->esem);
-			excode=wthread->exit_code;
-		}
-		else
-			excode=curcpu->plist[i]->exitcode;
 
-	if(wthread==NULL && i>=curcpu->pcount)
+	if(plist[i]->exitcode == -999){
+			P(plist[i]->esem);
+			//excode=wthread->exit_code;
+		}
+		//else
+			excode=plist[i]->exitcode;
+
+	if(wthread==NULL && i>=pcount)
 	{
 		return ESRCH;
 	}
@@ -109,7 +109,7 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 
 	res=copyout((const void *)&excode,(userptr_t)status,sizeof(int));
 	if(res)
-		return res;
+		return EFAULT;
 	*ret=pid;
 	return 0;
 }
@@ -160,15 +160,16 @@ sys___fork(int *ret,struct trapframe * tf)
 int
 sys___exit(int code)
 {
+	int i;
 	curthread->exit_code=_MKWAIT_EXIT(code);
-	for(int i=0;i<curcpu->pcount;i++)
-		if(curcpu->plist[i]->pid==curthread->process_id)
+	for(i=0;i<pcount;i++)
+		if(plist[i]->pid==curthread->process_id)
 		{
-				curcpu->plist[i]->exitcode=curthread->exit_code;
+				plist[i]->exitcode=curthread->exit_code;
 				break;
 		}
 
-	V(curthread->exit_sem);
+	V(plist[i]->esem);
 	thread_exit();
 
 	return 0;

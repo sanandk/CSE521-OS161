@@ -79,8 +79,6 @@ struct cpu {
 	struct threadlist c_runqueue;	/* Run queue for this cpu */
 	struct spinlock c_runqueue_lock;
 
-	int pcount;
-	struct process *plist[PID_MAX];
 
 	/*
 	 * Accessed by other cpus.

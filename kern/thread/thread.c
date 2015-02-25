@@ -49,9 +49,10 @@
 #include <mainbus.h>
 #include <vnode.h>
 #include <vfs.h>
+
 #include "opt-synchprobs.h"
 #include "opt-defaultscheduler.h"
-
+#include <syscall.h>
 
 /* Magic number used as a guard value on kernel thread stacks. */
 #define THREAD_STACK_MAGIC 0xbaadf00d
@@ -190,7 +191,7 @@ cpu_create(unsigned hardware_number)
 
 	c->c_curthread = NULL;
 	threadlist_init(&c->c_zombies);
-	c->pcount=0;
+	pcount=0;
 	c->c_hardclocks = 0;
 
 	c->c_isidle = false;
@@ -588,11 +589,11 @@ thread_fork(const char *name,
 	/* Set up the switchframe so entrypoint() gets called */
 	switchframe_init(newthread, entrypoint, data1, data2);
 
-	curcpu->plist[curcpu->pcount]=kmalloc(sizeof(struct process));
-	curcpu->plist[curcpu->pcount]->pid=newthread->process_id;
-	curcpu->plist[curcpu->pcount]->exitcode=-999;
-	curcpu->plist[curcpu->pcount]->esem=newthread->exit_sem;
-	curcpu->plist[curcpu->pcount++]->tptr=newthread;
+	plist[pcount]=kmalloc(sizeof(struct process));
+	plist[pcount]->pid=newthread->process_id;
+	plist[pcount]->exitcode=-999;
+	plist[pcount]->esem=newthread->exit_sem;
+	plist[pcount++]->tptr=newthread;
 
 	/* Lock the current cpu's run queue and make the new thread runnable */
 	thread_make_runnable(newthread, false);

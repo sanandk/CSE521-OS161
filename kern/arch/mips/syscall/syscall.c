@@ -106,6 +106,10 @@ syscall(struct trapframe *tf)
 		err = sys_reboot(tf->tf_a0);
 		break;
 
+	    case SYS_fork:
+		err = sys___fork(&retval,tf);
+		break;
+
 	    case SYS__exit:
 		err = sys___exit((int)tf->tf_a0);
 		break;

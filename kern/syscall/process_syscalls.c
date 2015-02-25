@@ -35,6 +35,8 @@
 #include <synch.h>
 #include <uio.h>
 #include <syscall.h>
+#include <addrspace.h>
+#include <mips/trapframe.h>
 #include <lib.h>
 #include <vnode.h>
 #include <vfs.h>
@@ -51,6 +53,46 @@ sys___getpid(int *ret)
 {
 
 	*ret=curthread->process_id;
+	return 0;
+}
+
+int entrypoint(void *child_tf, void* addr)
+{
+	struct trapframe *tf=(struct trapframe *)child_tf;
+	tf->tf_a3=0;	//fork success
+	tf->tf_v0=0;	//fork success
+	tf->tf_epc+=4;
+	curthread->t_addrspace=(struct addrspace *)addr;
+	as_activate(addr);
+	struct trapframe utf=*tf;
+	mips_usermode(&utf);
+	return 0;
+}
+
+/*
+ * sys_fork system call: create a child process
+ */
+int
+sys___fork(int *ret,struct trapframe * tf)
+{
+	*ret=-1;
+	struct trapframe *child_tf=kmalloc(sizeof(struct trapframe));
+
+	if (child_tf==NULL)
+		return ENOMEM;
+	*child_tf=*tf;
+	struct thread* child_thread;
+	struct addrspace *child_addrspace;
+	as_copy(curthread->t_addrspace,&child_addrspace);
+	if (child_addrspace==NULL)
+		return ENOMEM;
+
+	int result = thread_fork("sys_fork", (void *) entrypoint, child_tf, (unsigned long int)child_addrspace, &child_thread);
+	if(result)
+		return result;
+
+
+	*ret=child_thread->process_id;
 	return 0;
 }
 

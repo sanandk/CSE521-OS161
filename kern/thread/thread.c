@@ -551,6 +551,22 @@ thread_fork(const char *name,
 
 	/* Thread subsystem fields */
 	newthread->t_cpu = curthread->t_cpu;
+	newthread->fd_count=curthread->fd_count;
+	for(int i=0;i<=newthread->fd_count+2;i++)
+	{
+		if(curthread->f_handles[i]!=NULL)
+		{
+		newthread->f_handles[i]=kmalloc(sizeof(*newthread->f_handles[i]));
+		newthread->f_handles[i]->file_counter=curthread->f_handles[i]->file_counter;
+		newthread->f_handles[i]->file_name=kstrdup(curthread->f_handles[i]->file_name);
+		newthread->f_handles[i]->file_offset=curthread->f_handles[i]->file_offset;
+		newthread->f_handles[i]->op_flags=curthread->f_handles[i]->op_flags;
+		newthread->f_handles[i]->file_ref=curthread->f_handles[i]->file_ref;
+		newthread->f_handles[i]->file_lock=curthread->f_handles[i]->file_lock;
+		}
+	}
+	//*(newthread->f_handles)=kmalloc(curthread->fd_count*sizeof(curthread->f_handles));
+	//*(newthread->f_handles)=*(curthread->f_handles);
 
 	/* VM fields */
 	/* do not clone address space -- let caller decide on that */

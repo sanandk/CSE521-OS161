@@ -59,21 +59,8 @@ as_create(void)
 int
 as_copy(struct addrspace *old, struct addrspace **ret)
 {
-	struct addrspace *newas;
+		return 0;
 
-	newas = as_create();
-	if (newas==NULL) {
-		return ENOMEM;
-	}
-
-	/*
-	 * Write this.
-	 */
-
-	(void)old;
-	
-	*ret = newas;
-	return 0;
 }
 
 void
@@ -159,4 +146,3 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	
 	return 0;
 }
-

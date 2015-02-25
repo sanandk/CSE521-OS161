@@ -60,6 +60,8 @@ int sys___exit(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 
 int sys___getpid(int *ret);
+int
+sys___waitpid(int *ret,pid_t pid, int *status, int options);
 int entrypoint(void *, void *);
 int sys___fork(int *ret,struct trapframe *);
 int

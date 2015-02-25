@@ -30,7 +30,7 @@
 
 
 #include <types.h>
-#include <thread.h>
+
 #include <kern/errno.h>
 #include <synch.h>
 #include <uio.h>
@@ -41,8 +41,12 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <kern/fcntl.h>
+#include <thread.h>
+#include <threadlist.h>
 #include <current.h>
 #include <kern/wait.h>
+
+#include <cpu.h>
 
 
 /*
@@ -55,6 +59,65 @@ sys___getpid(int *ret)
 	*ret=curthread->process_id;
 	return 0;
 }
+
+/*
+ * sys_waitpid system call: get current process id
+ */
+int
+sys___waitpid(int *ret,pid_t pid, int *status, int options)
+{
+	*ret=-1;
+	if(pid==curthread->process_id)	//also check parent process
+			return ECHILD;
+	if(status==NULL)
+			return EFAULT;
+	if(options!=0)
+			return EINVAL;
+	if(pid<PID_MIN || pid>PID_MAX)
+			return ESRCH;
+
+	struct thread *wthread=NULL;
+
+	// Look for non-exited threads
+	struct threadlistnode ptr=curcpu->c_runqueue.tl_head;
+			while(1)
+			{
+				if(ptr.tln_self == curcpu->c_runqueue.tl_tail.tln_self)
+					break;
+				if(ptr.tln_self->process_id==pid)
+				{
+					wthread=ptr.tln_self;
+					break;
+				}
+				ptr=*(ptr.tln_next);
+			}
+
+	if(wthread==NULL)
+	{
+		// Look for zombies (exited threads)
+		struct threadlistnode ptr=curcpu->c_zombies.tl_head;
+		while(1)
+		{
+			if(ptr.tln_self == curcpu->c_zombies.tl_tail.tln_self)
+				break;
+			if(ptr.tln_self->process_id==pid)
+			{
+				wthread=ptr.tln_self;
+				break;
+			}
+			ptr=*(ptr.tln_next);
+		}
+	}
+	else
+		P(wthread->exit_sem);
+
+	if(wthread==NULL)
+		return ESRCH;
+
+	*ret=wthread->exit_code;
+	return 0;
+}
+
 
 int entrypoint(void *child_tf, void* addr)
 {

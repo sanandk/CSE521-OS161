@@ -558,6 +558,7 @@ thread_fork(const char *name,
 	{
 		if(curthread->f_handles[i]!=NULL)
 		{
+		curthread->f_handles[i]->file_counter+=1;
 		newthread->f_handles[i]=kmalloc(sizeof(*newthread->f_handles[i]));
 		newthread->f_handles[i]->file_counter=curthread->f_handles[i]->file_counter;
 		newthread->f_handles[i]->file_name=kstrdup(curthread->f_handles[i]->file_name);
@@ -593,6 +594,7 @@ thread_fork(const char *name,
 	plist[pcount]->pid=newthread->process_id;
 	plist[pcount]->exitcode=-999;
 	plist[pcount]->esem=newthread->exit_sem;
+	plist[pcount]->ppid=curthread->process_id;
 	newthread->parent=curthread;
 	plist[pcount++]->tptr=newthread;
 

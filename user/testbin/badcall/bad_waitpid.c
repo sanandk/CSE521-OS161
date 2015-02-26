@@ -36,7 +36,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <err.h>
-
+#include <stdio.h>
 #include "config.h"
 #include "test.h"
 
@@ -166,7 +166,7 @@ wait_siblings_child(void)
 		     mypid, TESTFILE);
 		return;
 	}
-
+	// printf("\ngoing to busy wait\n");
 	/*
 	 * Busy-wait until the parent writes the pids into the file.
 	 * This sucks, but there's not a whole lot else we can do.
@@ -185,7 +185,7 @@ wait_siblings_child(void)
 			return;
 		}
 	} while (rv < (int)sizeof(pids));
-
+	// printf("\nb over\n");
 	if (mypid==pids[0]) {
 		otherpid = pids[1];
 	}
@@ -215,19 +215,22 @@ wait_siblings(void)
 	if (fd<0) {
 		return;
 	}
-
+	// printf("\ntestfile opened\n");
 	pids[0] = fork();
 	if (pids[0]<0) {
 		warn("UH-OH: can't fork");
 		return;
 	}
+	// printf("\nforked0 opened\n");
 	if (pids[0]==0) {
 		close(fd);
+		// printf("\nchild closed fd\n");
 		wait_siblings_child();
 		_exit(0);
 	}
 
 	pids[1] = fork();
+	// printf("\nforked1 opened\n");
 	if (pids[1]<0) {
 		warn("UH-OH: can't fork");
 		/* abandon the other child process :( */
@@ -235,6 +238,7 @@ wait_siblings(void)
 	}
 	if (pids[1]==0) {
 		close(fd);
+		// printf("\nchild closed fd\n");
 		wait_siblings_child();
 		_exit(0);
 	}
@@ -250,12 +254,14 @@ wait_siblings(void)
 		/* abandon child procs :( */
 		return;
 	}
-
+	// printf("\nwrite done on fd by parent and going to waitpid on child\n");
 	rv = waitpid(pids[0], &x, 0);
+	// printf("\nwaitpid0 over\n");
 	if (rv<0) {
 		warn("UH-OH: error waiting for child 0 (pid %d)", pids[0]);
 	}
 	rv = waitpid(pids[1], &x, 0);
+	// printf("\nwaitpid1 over\n");
 	if (rv<0) {
 		warn("UH-OH: error waiting for child 1 (pid %d)", pids[1]);
 	}
@@ -269,9 +275,6 @@ wait_siblings(void)
 void
 test_waitpid(void)
 {
-
-		wait_siblings();
-		wait_parent();
 	wait_badpid(-8, "wait for pid -8");
 	wait_badpid(-1, "wait for pid -1");
 	wait_badpid(0, "pid zero");
@@ -286,5 +289,6 @@ test_waitpid(void)
 	wait_badflags();
 
 	wait_self();
-
+	wait_parent();
+	wait_siblings();
 }

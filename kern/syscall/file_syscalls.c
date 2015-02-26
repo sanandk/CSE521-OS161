@@ -87,31 +87,31 @@ sys___open(int *ret, char *filename, int flags, mode_t mode)
 	char *fname;
 	size_t len;
 
-	if(filename==NULL)
+	/*if(filename==NULL)
 	{
 			*ret=-1;
 			return EFAULT;
-	}
+	}*/
 	if(flags>66)
 	{
 		*ret=-1;
 		return EINVAL;
 	}
-	result = copycheck2((const_userptr_t) filename, PATH_MAX, &len);
+	//fname=filename;
+	/*result = copycheck2((const_userptr_t) filename, PATH_MAX, &len);
 	if (result) {
 		kprintf("|copycheck2 failed|");
 		*ret=-1;
 		return result;
-	}
-	fname=filename;
-	/*result= copyinstr((const_userptr_t) filename, fname, PATH_MAX, &len);
+	}*/
+	fname=kmalloc(sizeof(char)*PATH_MAX);
+	result= copyinstr((const_userptr_t) filename, fname, PATH_MAX, &len);
 
 		if (result)
 		{
 			*ret=-1;
 			return result;
 		}
-*/
 
 	/* Open the file. */
 	result = vfs_open(fname, flags, mode, &v);
@@ -124,7 +124,7 @@ sys___open(int *ret, char *filename, int flags, mode_t mode)
 
 	/* Allocate FD 	 */
 
-	for(i=3;i<curthread->fd_count+2;i++)
+	for(i=3;i<curthread->fd_count+3;i++)
 	{
 		if(curthread->f_handles[i]==NULL)
 			break;
@@ -158,13 +158,14 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize)
 		return EBADF;
 	}
 	void *kbuf=kmalloc(sizeof(*buf)*bufsize);
+	int result;
 	if(kbuf==NULL)
 	{
 		*ret=-1;
 		return EFAULT;
 	}
 	size_t len;
-	int result = copycheck2((const_userptr_t) buf, bufsize, &len);
+	result = copycheck2((const_userptr_t) buf, bufsize, &len);
 		if (result) {
 			return result;
 		}
@@ -220,23 +221,25 @@ sys___write(int *ret, int fd, void *buf, size_t bufsize)
 		*ret=-1;
 		return EBADF;
 	}
+	if(curthread->f_handles[fd]==NULL)
+	{
+			*ret=-1;
+			return EBADF;
+	}
 
 	void *kbuf=kmalloc(sizeof(*buf)*bufsize);
 	if(kbuf==NULL)
 	{
 		*ret=-1;
-		return EFAULT;
+		return EINVAL;
 	}
+	int result;
 	size_t len;
-	int result = copycheck2((const_userptr_t) buf, bufsize, &len);
+	result = copycheck2((const_userptr_t) buf, bufsize, &len);
 	if (result) {
 		return result;
 	}
-	if(curthread->f_handles[fd]==NULL)
-	{
-		*ret=-1;
-		return EBADF;
-	}
+
 
 	struct file_handle *file=curthread->f_handles[fd];
 	struct vnode *v=file->file_ref;
@@ -292,15 +295,17 @@ sys___close(int *ret, int fd)
 
 	if(curthread->f_handles[fd]->file_counter==1)
 	{
-		vfs_close(v);
+		//vfs_close(v);
+		VOP_CLOSE(v);
 		lock_destroy(curthread->f_handles[fd]->file_lock);
 		kfree(curthread->f_handles[fd]);
 		curthread->f_handles[fd]=NULL;
+		curthread->fd_count--;
 	}
 	else
 		curthread->f_handles[fd]->file_counter--;
 
-	curthread->fd_count--;
+
 
 		// error
 		*ret=0;
@@ -311,7 +316,7 @@ sys___close(int *ret, int fd)
 int
 sys___dup2(int *ret, int oldfd, int newfd)
 {
-	if(oldfd<0 || oldfd>OPEN_MAX || newfd<0 || newfd>OPEN_MAX || curthread->f_handles[oldfd]==NULL)
+	if(oldfd<0 || oldfd>OPEN_MAX || newfd<0 || newfd>=OPEN_MAX || curthread->f_handles[oldfd]==NULL)
 	{
 		*ret=-1;
 		return EBADF;
@@ -342,12 +347,28 @@ sys___dup2(int *ret, int oldfd, int newfd)
 int
 sys___chdir(int *ret, char *dirname)
 {
+	char *dname;
+
 	if(dirname==NULL)
 	{
 		*ret=-1;
 		return EFAULT;
 	}
-	int result = vfs_chdir(dirname);
+	size_t len;
+	int result= copyinstr((const_userptr_t) dirname, dname, PATH_MAX, &len);
+
+	if (result)
+	{
+		*ret=-1;
+		return result;
+	}
+
+	if(dname==NULL)
+	{
+		*ret=-1;
+		return EFAULT;
+	}
+	result = vfs_chdir(dirname);
 		if (result) {
 			*ret=result;
 			return -1;
@@ -361,8 +382,33 @@ sys___getcwd(int *ret, char *buf, size_t buflen)
 	struct iovec iov;
 	struct uio ku;
 
+	if(buf==NULL)
+	{
+			*ret=-1;
+			return EFAULT;
+	}
+	void *kbuf=kmalloc(sizeof(*buf)*buflen);
+	if(kbuf==NULL)
+	{
+		*ret=-1;
+		return EFAULT;
+	}
+	size_t len;
+	int result = copycheck2((const_userptr_t) buf, buflen, &len);
+	if (result) {
+		return result;
+	}
+
+		result= copyinstr((const_userptr_t) buf, kbuf, buflen, &len);
+		if (result)
+		{
+			*ret=-1;
+			return result;
+		}
+
+
 	uio_kinit(&iov, &ku, buf, buflen, 0, UIO_READ);
-	int result = vfs_getcwd(&ku);
+	result = vfs_getcwd(&ku);
 	if (result) {
 		*ret=-1;
 		return result;
@@ -382,12 +428,12 @@ sys___lseek(int *ret,int *ret2, int fd, off_t offset, int whence)
 		*ret=-1;
 		return EBADF;
 	}
-	if(fd>=0 && fd<3)
+/*	if(fd>=0 && fd<3)
 	{
 		*ret=-1;
 		return ESPIPE;
 	}
-
+*/
 	struct stat fs;
 
 	lock_acquire(curthread->f_handles[fd]->file_lock);

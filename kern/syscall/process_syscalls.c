@@ -67,11 +67,19 @@ int
 sys___waitpid(int *ret,pid_t pid, int *status, int options)
 {
 	*ret=-1;
-	int res;
-	if(options!=909 && pid==curthread->process_id)
-			return ECHILD;
-	if(options!=909 && curthread->parent!=NULL && pid==curthread->parent->process_id)
-			return ECHILD;
+	int res,i;
+	pid_t myparent=-1, hisparent=-2;
+
+	for(i=0;i<pcount;i++)
+	{
+		if(myparent!=-1 && hisparent!=-2)
+			break;
+		if(plist[i]->pid==curthread->process_id)
+			myparent=plist[i]->ppid;
+		else if(plist[i]->pid==pid)
+			hisparent=plist[i]->ppid;
+	}
+
 	if(pid<PID_MIN || pid>PID_MAX)
 		return ESRCH;
 	if(status==NULL)
@@ -89,8 +97,16 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 		res=copyout((const void *)&curthread->exit_code,(userptr_t)status,sizeof(int));
 		if(res)
 			return EFAULT;
+		if(pid==curthread->process_id)
+					return ECHILD;
+		//if(myparent==hisparent)
+			//		return ECHILD;
+		if(options!=909 && hisparent!=curthread->process_id)
+				return ECHILD;
+
 	}
-	int i,excode=0;
+
+	int excode=0;
 	struct thread *wthread=NULL;
 	for(i=0;i<pcount;i++)
 		if(plist[i]->pid==pid)
@@ -100,6 +116,7 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 		}
 	if(i==pcount)
 		return ESRCH;
+
 
 	if(plist[i]->exitcode == -999)
 		P(plist[i]->esem);
@@ -140,19 +157,29 @@ int
 sys___fork(int *ret,struct trapframe * tf)
 {
 	*ret=-1;
-	struct trapframe *child_tf=kmalloc(sizeof(struct trapframe));
+	struct addrspace *child_addrspace;
+
 	if(pcount==PID_MAX)
 		return ENPROC;
-	if (child_tf==NULL)
-		return ENOMEM;
-	*child_tf=*tf;
+
 	struct thread* child_thread;
-	struct addrspace *child_addrspace;
+
 	int result=as_copy(curthread->t_addrspace,&child_addrspace);
 	if(result)
+	{
+
 		return ENOMEM;
-	if (child_addrspace==NULL)
-		return ENOMEM;
+	}
+
+	struct trapframe *child_tf=kmalloc(sizeof(struct trapframe));
+		if (child_tf==NULL){
+			kprintf("|trapframe malloc failed}");
+			return ENOMEM;
+		}
+		*child_tf=*tf;
+
+	//if (child_addrspace==NULL)
+		//return ENOMEM;
 
 	result = thread_fork("sys_fork", (void *) entrypoint, child_tf, (unsigned long int)child_addrspace, &child_thread);
 	if(result)

@@ -51,7 +51,7 @@ struct process {
 	struct thread *tptr;
 	int exitcode;
 	struct semaphore *esem;
-	pid_t pid;
+	pid_t pid,ppid;
 };
 
 struct cpu {

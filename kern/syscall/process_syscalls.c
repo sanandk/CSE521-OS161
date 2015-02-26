@@ -67,22 +67,28 @@ int
 sys___waitpid(int *ret,pid_t pid, int *status, int options)
 {
 	*ret=-1;
+	int res;
 	if(pid==curthread->process_id)	//also check parent process
 			return ECHILD;
 	if(status==NULL)
 			return EFAULT;
 	size_t stoplen;
-	int res=copycheck2((const_userptr_t) status, sizeof(int), &stoplen);
-	if(res)
-			return EFAULT;
+	if(options!=909)
+	{
+		res=copycheck2((const_userptr_t) status, sizeof(int), &stoplen);
+		if(res)
+				return EFAULT;
 
-	if(options!=0)
-			return EINVAL;
-	if(pid<PID_MIN || pid>PID_MAX)
-			return ESRCH;
-	res=copyout((const void *)&curthread->exit_code,(userptr_t)status,sizeof(int));
-	if(res)
-		return EFAULT;
+		if(options!=0)
+				return EINVAL;
+
+		if(pid<PID_MIN || pid>PID_MAX)
+				return ESRCH;
+
+		res=copyout((const void *)&curthread->exit_code,(userptr_t)status,sizeof(int));
+		if(res)
+			return EFAULT;
+	}
 	int i,excode=0;
 	struct thread *wthread=NULL;
 	for(i=0;i<pcount;i++)
@@ -106,10 +112,12 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 		return ESRCH;
 	}
 
-
-	res=copyout((const void *)&excode,(userptr_t)status,sizeof(int));
-	if(res)
-		return EFAULT;
+	if(options!=909)
+	{
+		res=copyout((const void *)&excode,(userptr_t)status,sizeof(int));
+		if(res)
+			return EFAULT;
+	}
 	*ret=pid;
 	return 0;
 }
@@ -136,17 +144,20 @@ sys___fork(int *ret,struct trapframe * tf)
 {
 	*ret=-1;
 	struct trapframe *child_tf=kmalloc(sizeof(struct trapframe));
-
+	if(pcount==PID_MAX)
+		return ENPROC;
 	if (child_tf==NULL)
 		return ENOMEM;
 	*child_tf=*tf;
 	struct thread* child_thread;
 	struct addrspace *child_addrspace;
-	as_copy(curthread->t_addrspace,&child_addrspace);
+	int result=as_copy(curthread->t_addrspace,&child_addrspace);
+	if(result)
+		return ENOMEM;
 	if (child_addrspace==NULL)
 		return ENOMEM;
 
-	int result = thread_fork("sys_fork", (void *) entrypoint, child_tf, (unsigned long int)child_addrspace, &child_thread);
+	result = thread_fork("sys_fork", (void *) entrypoint, child_tf, (unsigned long int)child_addrspace, &child_thread);
 	if(result)
 		return result;
 

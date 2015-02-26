@@ -126,22 +126,26 @@ static
 int
 common_prog(int nargs, char **args)
 {
-	int result;
+	int result,status,ret;
 
 #if OPT_SYNCHPROBS
 	kprintf("Warning: this probably won't work with a "
 		"synchronization-problems kernel.\n");
 #endif
-
+	struct thread *pthread;
 	result = thread_fork(args[0] /* thread name */,
 			cmd_progthread /* thread function */,
 			args /* thread arg */, nargs /* thread arg */,
-			NULL);
+			&pthread);
 	if (result) {
 		kprintf("thread_fork failed: %s\n", strerror(result));
 		return result;
 	}
-
+	result=sys___waitpid(&ret,pthread->process_id,&status, 909);
+	if (result) {
+		kprintf("waitpid failed: %s\n", strerror(result));
+		return result;
+	}
 	return 0;
 }
 

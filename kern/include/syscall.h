@@ -69,6 +69,8 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options);
 int entrypoint(void *, void *);
 int sys___fork(int *ret,struct trapframe *);
 int
+sys___execv(int *ret,const char *program, char **uargs);
+int
 sys___open(int *, char *, int , mode_t);
 int
 sys___read(int *ret, int fd, void *buf, size_t bufsize);

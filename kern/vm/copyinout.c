@@ -265,6 +265,7 @@ int
 copystr(char *dest, const char *src, size_t maxlen, size_t stoplen,
 	size_t *gotlen)
 {
+
 	size_t i;
 
 	for (i=0; i<maxlen && i<stoplen; i++) {
@@ -276,10 +277,42 @@ copystr(char *dest, const char *src, size_t maxlen, size_t stoplen,
 			return 0;
 		}
 	}
+
 	if (stoplen < maxlen) {
 		/* ran into user-kernel boundary */
 		return EFAULT;
 	}
+
+	/* otherwise just ran out of space */
+	return ENAMETOOLONG;
+}
+
+int
+copystr2(char *dest, const char *src, size_t maxlen, size_t stoplen,
+	size_t *gotlen)
+{
+
+	size_t i;
+	kprintf("ENTREY=%d",strlen(dest));
+	if(strlen(dest)<1)
+			return EINVAL;
+
+	for (i=0; i<maxlen && i<stoplen; i++) {
+		dest[i] = src[i];
+		if (src[i] == 0) {
+			if (gotlen != NULL) {
+				*gotlen = i+1;
+			}
+			return 0;
+		}
+	}
+
+	if (stoplen < maxlen) {
+		/* ran into user-kernel boundary */
+
+		return EFAULT;
+	}
+
 	/* otherwise just ran out of space */
 	return ENAMETOOLONG;
 }
@@ -302,13 +335,19 @@ copyinstr(const_userptr_t usersrc, char *dest, size_t len, size_t *actual)
 	if (result) {
 		return result;
 	}
-
 	curthread->t_machdep.tm_badfaultfunc = copyfail;
 
 	result = setjmp(curthread->t_machdep.tm_copyjmp);
 	if (result) {
 		curthread->t_machdep.tm_badfaultfunc = NULL;
 		return EFAULT;
+	}
+
+	const char* src= (const char *) usersrc;
+	if(src[0]=='\0')
+	{
+		curthread->t_machdep.tm_badfaultfunc = NULL;
+		return EINVAL;
 	}
 
 	result = copystr(dest, (const char *)usersrc, len, stoplen, actual);

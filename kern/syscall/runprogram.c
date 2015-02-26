@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <copyinout.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -52,7 +53,7 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, int argc, char **uargv)
 {
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
@@ -102,9 +103,57 @@ runprogram(char *progname)
 		return result;
 	}
 
-	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-			  stackptr, entrypoint);
+	char **argv=uargv;
+	size_t len;
+	int olen;
+	int	i=0;
+		while(i<argc)
+		{
+			//kprintf("%s\n",argv[i++]);
+			len=strlen(argv[i])+1;
+			olen=len;
+			if(len%4!=0)
+				len=len+4-(len%4);
+
+			char *str=kmalloc(sizeof(len));
+			str=kstrdup(argv[i]);	//dont need actually
+			for(int j=0;j<(int)len;j++)
+			{
+				if(j>=olen)
+					str[j]='\0';
+				else
+					str[j]=argv[i][j];
+			}
+
+			stackptr-=len;
+
+			int res=copyout((const void *)str,(userptr_t)stackptr,len);
+
+			if(res)
+				return EFAULT;
+
+			argv[i]=(char *)stackptr;
+
+			i++;
+		}
+		stackptr-=4*sizeof(char);
+		//if(argv[i]==NULL){
+			//stackptr-=4*sizeof(char);
+		//}
+
+		for(i=argc-1;i>=0;i--)
+		{
+			stackptr-=sizeof(char*);
+			int res=copyout((const void *)(argv+i),(userptr_t)stackptr,sizeof(char*));
+			if(res)
+				return EFAULT;
+		}
+
+		/* Warp to user mode. */
+		enter_new_process(argc, (userptr_t)stackptr,
+				  stackptr, entrypoint);
+
+
 	
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");

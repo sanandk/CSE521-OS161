@@ -129,6 +129,7 @@ struct thread {
 	pid_t process_id;
 	int exit_code;
 	struct semaphore *exit_sem;
+	struct thread *parent;
 	int fd_count;
 	struct file_handle *f_handles[OPEN_MAX];	/* Pointer to file handles */
 

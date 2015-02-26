@@ -43,7 +43,7 @@
 #include <kern/stat.h>
 #include <current.h>
 #include <kern/wait.h>
-
+#include <copyinout.h>
 
 /*
  * sys_getpid system call: get current process id
@@ -80,16 +80,38 @@ int std_open(int fd, int flags)
  * sys_open system call: open file
  */
 int
-sys___open(int *ret, char *fname, int flags, mode_t mode)
+sys___open(int *ret, char *filename, int flags, mode_t mode)
 {
 	struct vnode *v;
 	int i,result;
+	char *fname;
+	size_t len;
 
-	if(fname==NULL || strlen(fname)<1)
+	if(filename==NULL)
+	{
+			*ret=-1;
+			return EFAULT;
+	}
+	if(flags>66)
 	{
 		*ret=-1;
-		return EFAULT;
+		return EINVAL;
 	}
+	result = copycheck2((const_userptr_t) filename, PATH_MAX, &len);
+	if (result) {
+		kprintf("|copycheck2 failed|");
+		*ret=-1;
+		return result;
+	}
+	fname=filename;
+	/*result= copyinstr((const_userptr_t) filename, fname, PATH_MAX, &len);
+
+		if (result)
+		{
+			*ret=-1;
+			return result;
+		}
+*/
 
 	/* Open the file. */
 	result = vfs_open(fname, flags, mode, &v);
@@ -129,7 +151,25 @@ sys___open(int *ret, char *fname, int flags, mode_t mode)
 int
 sys___read(int *ret, int fd, void *buf, size_t bufsize)
 {
+
 	if(fd<0 || fd>OPEN_MAX)
+	{
+		*ret=-1;
+		return EBADF;
+	}
+	void *kbuf=kmalloc(sizeof(*buf)*bufsize);
+	if(kbuf==NULL)
+	{
+		*ret=-1;
+		return EFAULT;
+	}
+	size_t len;
+	int result = copycheck2((const_userptr_t) buf, bufsize, &len);
+		if (result) {
+			return result;
+		}
+
+	if(curthread->f_handles[fd]==NULL)
 	{
 		*ret=-1;
 		return EBADF;
@@ -145,6 +185,7 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize)
 		return EBADF;
 	}
 
+
 	lock_acquire(file->file_lock);
 
 	iov.iov_ubase = (userptr_t)buf;
@@ -157,7 +198,7 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize)
 	u.uio_rw = UIO_READ;
 	u.uio_space = curthread->t_addrspace;
 
-	int result = VOP_READ(v, &u);
+	result = VOP_READ(v, &u);
 	if (result) {
 		lock_release(file->file_lock);
 		*ret=-1;
@@ -179,6 +220,24 @@ sys___write(int *ret, int fd, void *buf, size_t bufsize)
 		*ret=-1;
 		return EBADF;
 	}
+
+	void *kbuf=kmalloc(sizeof(*buf)*bufsize);
+	if(kbuf==NULL)
+	{
+		*ret=-1;
+		return EFAULT;
+	}
+	size_t len;
+	int result = copycheck2((const_userptr_t) buf, bufsize, &len);
+	if (result) {
+		return result;
+	}
+	if(curthread->f_handles[fd]==NULL)
+	{
+		*ret=-1;
+		return EBADF;
+	}
+
 	struct file_handle *file=curthread->f_handles[fd];
 	struct vnode *v=file->file_ref;
 	struct iovec iov;
@@ -202,7 +261,7 @@ sys___write(int *ret, int fd, void *buf, size_t bufsize)
 	u.uio_rw = UIO_WRITE;
 	u.uio_space = curthread->t_addrspace;
 
-	int result = VOP_WRITE(v, &u);
+	result = VOP_WRITE(v, &u);
 	if (result) {
 		lock_release(file->file_lock);
 		*ret=-1;

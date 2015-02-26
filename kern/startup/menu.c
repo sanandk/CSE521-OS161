@@ -100,7 +100,7 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	strcpy(progname, args[0]);
 
-	result = runprogram(progname);
+	result = runprogram(progname,nargs,args);
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
@@ -144,8 +144,9 @@ common_prog(int nargs, char **args)
 	result=sys___waitpid(&ret,pthread->process_id,&status, 909);
 	if (result) {
 		kprintf("waitpid failed: %s\n", strerror(result));
-		return result;
+		return 0;
 	}
+	//kprintf("\nwaitpid returned %d!",result);
 	return 0;
 }
 

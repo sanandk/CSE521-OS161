@@ -484,7 +484,7 @@ pid_t pid_allocate()
 	{
 		return PID_MIN;
 	}
-	pid_t new_pid=curcpu->c_processcount;
+	pid_t new_pid = pcount + PID_MIN;
 
 	/*if(new_pid==-1)
 	{
@@ -505,11 +505,11 @@ pid_t pid_allocate()
 		new_pid=cnt;
 	}*/
 
-	if(curcpu->c_processcount==PID_MAX)
+	/*if(pcount==PID_MAX)
 		curcpu->c_processcount=-1;
 	else
 		curcpu->c_processcount++;
-
+*/
 	return new_pid;
 }
 
@@ -593,6 +593,7 @@ thread_fork(const char *name,
 	plist[pcount]->pid=newthread->process_id;
 	plist[pcount]->exitcode=-999;
 	plist[pcount]->esem=newthread->exit_sem;
+	newthread->parent=curthread;
 	plist[pcount++]->tptr=newthread;
 
 	/* Lock the current cpu's run queue and make the new thread runnable */

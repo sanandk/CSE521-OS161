@@ -68,22 +68,23 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 {
 	*ret=-1;
 	int res;
-	if(pid==curthread->process_id)	//also check parent process
+	if(options!=909 && pid==curthread->process_id)
 			return ECHILD;
+	if(options!=909 && curthread->parent!=NULL && pid==curthread->parent->process_id)
+			return ECHILD;
+	if(pid<PID_MIN || pid>PID_MAX)
+		return ESRCH;
 	if(status==NULL)
-			return EFAULT;
+		return EFAULT;
 	size_t stoplen;
 	if(options!=909)
 	{
 		res=copycheck2((const_userptr_t) status, sizeof(int), &stoplen);
 		if(res)
-				return EFAULT;
+			return EFAULT;
 
 		if(options!=0)
-				return EINVAL;
-
-		if(pid<PID_MIN || pid>PID_MAX)
-				return ESRCH;
+			return EINVAL;
 
 		res=copyout((const void *)&curthread->exit_code,(userptr_t)status,sizeof(int));
 		if(res)
@@ -100,17 +101,13 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 	if(i==pcount)
 		return ESRCH;
 
-	if(plist[i]->exitcode == -999){
-			P(plist[i]->esem);
-			//excode=wthread->exit_code;
-		}
-		//else
-			excode=plist[i]->exitcode;
+	if(plist[i]->exitcode == -999)
+		P(plist[i]->esem);
+
+	excode=plist[i]->exitcode;
 
 	if(wthread==NULL && i>=pcount)
-	{
 		return ESRCH;
-	}
 
 	if(options!=909)
 	{
@@ -166,6 +163,141 @@ sys___fork(int *ret,struct trapframe * tf)
 }
 
 /*
+ * sys_execv system call: run the program
+ */
+int
+sys___execv(int *ret,const char *program, char **uargs)
+{
+
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr;
+	int result,argc;
+	char *pname, **argv;
+	size_t len;
+
+	*ret=-1;
+
+	if(program==NULL || uargs == NULL)
+		return EFAULT;
+
+	pname=kmalloc(sizeof(char)*PATH_MAX);
+
+	result= copyinstr((const_userptr_t) program, pname, PATH_MAX, &len);
+
+	if (result)
+		return result;
+
+	if(len < 2 || len >PATH_MAX)
+		return EINVAL;
+
+	argv=kmalloc(sizeof(char**));
+	result= copyin((const_userptr_t) uargs, argv, sizeof(argv));
+
+	if (result)
+		return result;
+
+	int i=0;
+
+	while(uargs[i]!=NULL){
+			argv[i] = kmalloc(sizeof(uargs[i]));
+			result = copyinstr((const_userptr_t) uargs[i],argv[i], PATH_MAX, &len);
+			if(len>ARG_MAX)
+				return E2BIG;
+			if (result)
+				return result;
+			i++;
+	}
+
+	argc=i;
+
+	/* Open the file. */
+	result = vfs_open(pname, O_RDONLY, 0, &v);
+	if (result) {
+		return result;
+	}
+
+	/* Create a new address space. */
+	curthread->t_addrspace = as_create();
+	if (curthread->t_addrspace==NULL) {
+		vfs_close(v);
+		return ENOMEM;
+	}
+
+	/* Activate it. */
+	as_activate(curthread->t_addrspace);
+
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+		/* thread_exit destroys curthread->t_addrspace */
+		vfs_close(v);
+		return result;
+	}
+
+	/* Done with the file now. */
+	vfs_close(v);
+
+	/* Define the user stack in the address space */
+	result = as_define_stack(curthread->t_addrspace, &stackptr);
+	if (result) {
+
+		/* thread_exit destroys curthread->t_addrspace */
+		return result;
+	}
+
+	int olen;
+	i=0;
+	while(i<argc)
+	{
+		//kprintf("%s\n",argv[i++]);
+		len=strlen(argv[i])+1;
+		olen=len;
+		if(len%4!=0)
+			len=len+4-(len%4);
+
+		char *str=kmalloc(sizeof(len));
+		str=kstrdup(argv[i]);	//dont need actually
+		for(int j=0;j<(int)len;j++)
+		{
+			if(j>=olen)
+				str[j]='\0';
+			else
+				str[j]=argv[i][j];
+		}
+
+		stackptr-=len;
+
+		int res=copyout((const void *)str,(userptr_t)stackptr,len);
+
+		if(res)
+			return EFAULT;
+
+		argv[i]=(char *)stackptr;
+
+		i++;
+	}
+
+	//if(argv[i]==NULL){
+		stackptr-=4*sizeof(char);
+	//}
+
+	for(i=argc-1;i>=0;i--)
+	{
+		stackptr-=sizeof(char*);
+		int res=copyout((const void *)(argv+i),(userptr_t)stackptr,sizeof(char*));
+		if(res)
+			return EFAULT;
+	}
+
+	/* Warp to user mode. */
+	enter_new_process(argc, (userptr_t)stackptr,
+			  stackptr, entrypoint);
+
+
+	return 0;
+}
+
+/*
  * sys_exit system call: exit process
  */
 int
@@ -182,6 +314,5 @@ sys___exit(int code)
 
 	V(plist[i]->esem);
 	thread_exit();
-
 	return 0;
 }

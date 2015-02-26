@@ -269,6 +269,9 @@ wait_siblings(void)
 void
 test_waitpid(void)
 {
+
+		wait_siblings();
+		wait_parent();
 	wait_badpid(-8, "wait for pid -8");
 	wait_badpid(-1, "wait for pid -1");
 	wait_badpid(0, "pid zero");
@@ -283,6 +286,5 @@ test_waitpid(void)
 	wait_badflags();
 
 	wait_self();
-	wait_parent();
-	wait_siblings();
+
 }

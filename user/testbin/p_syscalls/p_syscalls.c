@@ -46,6 +46,9 @@ main()
 	//(void *)argc;
 	//(void *)argv;
 	printf("Answer: %d\n", getpid());
+	int *null = NULL;
+	volatile int x;
+	x = *null;
 
 	return 0;
 }

@@ -136,7 +136,8 @@ sys___open(int *ret, char *filename, int flags, mode_t mode)
 	}
 
 	curthread->f_handles[i]=kmalloc(sizeof(*curthread->f_handles[i]));
-	curthread->fd_count++;
+	if(i>curthread->fd_count)
+		curthread->fd_count++;
 	curthread->f_handles[i]->file_counter=1;
 	curthread->f_handles[i]->file_name=kstrdup(fname);
 	curthread->f_handles[i]->file_offset=0;
@@ -152,7 +153,7 @@ int
 sys___read(int *ret, int fd, void *buf, size_t bufsize)
 {
 
-	if(fd<0 || fd>OPEN_MAX)
+	if(fd<0 || fd>=OPEN_MAX)
 	{
 		*ret=-1;
 		return EBADF;
@@ -170,7 +171,7 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize)
 			return result;
 		}
 
-	if(curthread->f_handles[fd]==NULL)
+	if(fd>curthread->fd_count+2 || curthread->f_handles[fd]==NULL)
 	{
 		*ret=-1;
 		return EBADF;
@@ -216,12 +217,12 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize)
 int
 sys___write(int *ret, int fd, void *buf, size_t bufsize)
 {
-	if(fd<0 || fd>OPEN_MAX)
+	if(fd<0 || fd>=OPEN_MAX)
 	{
 		*ret=-1;
 		return EBADF;
 	}
-	if(curthread->f_handles[fd]==NULL)
+	if( fd>curthread->fd_count+2 || curthread->f_handles[fd]==NULL)
 	{
 			*ret=-1;
 			return EBADF;
@@ -285,7 +286,7 @@ sys___write(int *ret, int fd, void *buf, size_t bufsize)
 int
 sys___close(int *ret, int fd)
 {
-	if(fd<0 || fd>OPEN_MAX || curthread->f_handles[fd]==NULL)
+	if(fd<0 || fd>OPEN_MAX || fd>curthread->fd_count+2)
 	{
 		*ret=-1;
 		return EBADF;
@@ -316,7 +317,8 @@ sys___close(int *ret, int fd)
 int
 sys___dup2(int *ret, int oldfd, int newfd)
 {
-	if(oldfd<0 || oldfd>OPEN_MAX || newfd<0 || newfd>=OPEN_MAX || curthread->f_handles[oldfd]==NULL)
+	//kprintf("old fd is %d,%d,%d",oldfd,newfd,curthread->fd_count);
+	if(oldfd<0 || oldfd>=OPEN_MAX || newfd<0 || newfd>=OPEN_MAX)
 	{
 		*ret=-1;
 		return EBADF;
@@ -326,11 +328,18 @@ sys___dup2(int *ret, int oldfd, int newfd)
 		*ret=oldfd;
 		return 0;
 	}
+	if(oldfd>curthread->fd_count+2)
+	{
+		*ret=-1;
+		return EBADF;
+	}
 
-	if(curthread->f_handles[newfd]!=NULL)
+	if(newfd<=curthread->fd_count+2 && curthread->f_handles[newfd]!=NULL)
 		sys___close(ret,newfd);
 
 	lock_acquire(curthread->f_handles[oldfd]->file_lock);
+	if(curthread->fd_count+2<newfd)
+		curthread->fd_count=newfd-2;
 	curthread->f_handles[newfd]=kmalloc(sizeof(*curthread->f_handles[newfd]));
 	curthread->f_handles[newfd]->file_counter=curthread->f_handles[oldfd]->file_counter;
 	curthread->f_handles[newfd]->file_name=kstrdup(curthread->f_handles[oldfd]->file_name);
@@ -425,6 +434,12 @@ sys___lseek(int *ret,int *ret2, int fd, off_t offset, int whence)
 	off_t new_pos,fsize;
 	if(fd<0 || fd>OPEN_MAX || curthread->f_handles[fd]==NULL)
 	{
+		*ret=-1;
+		return EBADF;
+	}
+	if(fd>curthread->fd_count+2)
+	{
+		//kprintf("fd is %d,%d",fd,curthread->fd_count);
 		*ret=-1;
 		return EBADF;
 	}

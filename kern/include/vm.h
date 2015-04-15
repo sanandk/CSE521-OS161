@@ -44,6 +44,8 @@
 #define VM_FAULT_WRITE       1    /* A write was attempted */
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 enum page_state_t {FREE, DIRTY, CLEAN, FIXED};
+int free_index, last_index;
+struct coremap_page *core_map;
 struct coremap_page {
     /* where is paged mapped to */
     struct addrspace *aspace;

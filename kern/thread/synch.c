@@ -209,7 +209,7 @@ lock_acquire(struct lock *lock)
 	struct thread *mythread;
         // Write this
 	KASSERT(lock!=NULL);
-	splraise(IPL_NONE, IPL_HIGH);
+	//splraise(IPL_NONE, IPL_HIGH);
 
 	if(lock_do_i_hold(lock))
 		panic("Deadlock on lock %p\n", lock);
@@ -225,14 +225,14 @@ lock_acquire(struct lock *lock)
 	}
 	lock->lk_holder = mythread;
 	spinlock_release(&lock->lk_slock);
-	spllower(IPL_HIGH, IPL_NONE);
+	//spllower(IPL_HIGH, IPL_NONE);
        //(void)lock;  // suppress warning until code gets written
 }
 
 void
 lock_release(struct lock *lock)
 {
-	splraise(IPL_NONE, IPL_HIGH);
+	//splraise(IPL_NONE, IPL_HIGH);
 // this must work before curcpu initialization
 
 	spinlock_acquire(&lock->lk_slock);
@@ -242,7 +242,7 @@ lock_release(struct lock *lock)
 	wchan_wakeone(lock->lk_wchan);
 	}
 	spinlock_release(&lock->lk_slock);
-	spllower(IPL_HIGH, IPL_NONE);
+	//spllower(IPL_HIGH, IPL_NONE);
 
         // Write this
 

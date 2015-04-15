@@ -14,8 +14,7 @@
 
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 static struct lock *coremap_lock;
-static struct coremap_page *core_map;
-static int vm_bootstrapped=0, free_index, last_index;
+static int vm_bootstrapped=0;
 static paddr_t freeaddr;
 static paddr_t ROUNDDOWN(paddr_t size)
 {
@@ -37,7 +36,7 @@ vm_bootstrap(void)
 	coremap_lock = lock_create("core_map");
 	paddr_t first_addr, lastaddr;
 	ram_getsize(&first_addr, &lastaddr);
-	int total_page_num = lastaddr / PAGE_SIZE;
+	int total_page_num = (lastaddr-first_addr) / PAGE_SIZE;
 	/* pages should be a kernel virtual address !!  */
 	core_map = (struct coremap_page*)PADDR_TO_KVADDR(first_addr);
 	freeaddr = first_addr + total_page_num * sizeof(struct coremap_page);
@@ -51,13 +50,11 @@ vm_bootstrap(void)
 	last_index=total_page_num;
 	for(int i=0;i<total_page_num;i++)
 	{
-		if(i<free_index)
-			core_map[i].pstate=FIXED;
-		else
-			core_map[i].pstate=FREE;
-
-		core_map[i].paddr= (PAGE_SIZE*i) + freeaddr;
+		core_map[i].paddr= (PAGE_SIZE*i) +freeaddr;
 		core_map[i].vaddr=PADDR_TO_KVADDR(core_map[i].paddr);
+		//kprintf("%x\t",core_map[i].paddr);
+		//kprintf("%x\t",core_map[i].vaddr);
+		core_map[i].pstate=FREE;
 	}
 	vm_bootstrapped=1;
 	//kprintf("%d,%d,%d",getpageindex(0),getpageindex(freeaddr),getpageindex(lastaddr));
@@ -69,9 +66,9 @@ vm_bootstrap(void)
 vaddr_t alloc_page(void)
 {
 	paddr_t pa;
-	lock_acquire(coremap_lock);
+	spinlock_acquire(&stealmem_lock);
 	int found=-1;
-	for(int i=free_index;i<last_index;i++)
+	for(int i=0;i<last_index;i++)
 	{
 		if(core_map[i].pstate==FREE)
 		{
@@ -81,14 +78,15 @@ vaddr_t alloc_page(void)
 			break;
 		}
 	}
-	lock_release(coremap_lock);
+	spinlock_release(&stealmem_lock);
 
 	if (found==-1) {
 		return 0;
 	}
-	pa= freeaddr + (found * PAGE_SIZE);
+	//pa= freeaddr + (found * PAGE_SIZE);
+	pa=core_map[found].paddr;
 
-	return PADDR_TO_KVADDR(pa);
+	return pa;
 }
 
 static
@@ -97,11 +95,11 @@ getppages(unsigned long npages)
 {
 	paddr_t addr;
 	spinlock_acquire(&stealmem_lock);
-	//lock_acquire(coremap_lock);
+	//spinlock_acquire(&stealmem_lock);
 
 	addr = ram_stealmem(npages);
 	spinlock_release(&stealmem_lock);
-	//lock_release(coremap_lock);
+	//spinlock_release(&stealmem_lock);
 	return addr;
 }
 
@@ -114,9 +112,9 @@ alloc_kpages(int npages)
 		pa = getppages(npages);
 	else
 	{
-		lock_acquire(coremap_lock);
+		spinlock_acquire(&stealmem_lock);
 		int found=-1,start=-1;
-		for(int i=free_index;i<last_index;i++)
+		for(int i=0;i<last_index;i++)
 		{
 			if(core_map[i].pstate==FREE)
 			{
@@ -124,8 +122,11 @@ alloc_kpages(int npages)
 					start=i;
 				if(i-start==npages-1)
 				{
+					for(int j=start;j<=i;j++)
+					{
 					core_map[start].pstate=FIXED;
 					core_map[start].npages=npages;
+					}
 					found=i;
 					break;
 				}
@@ -135,12 +136,12 @@ alloc_kpages(int npages)
 				start=-1;
 			}
 		}
-		lock_release(coremap_lock);
+		spinlock_release(&stealmem_lock);
 
 		if (found==-1) {
 			return 0;
 		}
-		pa= (start * PAGE_SIZE);
+		pa= core_map[start].paddr;
 	}
 	if (pa==0) {
 		return 0;
@@ -151,7 +152,7 @@ alloc_kpages(int npages)
 void
 free_page(vaddr_t addr)
 {
-	for(int i=free_index;i<last_index;i++)
+	for(int i=0;i<last_index;i++)
 	{
 		if((vaddr_t)(i*PAGE_SIZE)==addr)
 		{
@@ -167,7 +168,7 @@ free_page(vaddr_t addr)
 void
 free_kpages(vaddr_t addr)
 {
-	for(int i=free_index;i<last_index;i++)
+	for(int i=0;i<last_index;i++)
 	{
 		if((freeaddr+(i*PAGE_SIZE))==addr)
 		{
@@ -192,7 +193,7 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	(void)ts;
 	panic("dumbvm tried to do tlb shootdown?!\n");
 }
-
+/*
 static vaddr_t getfirst10(vaddr_t addr){
 
 	//unsigned int myuint32=0xADADADAD;
@@ -210,7 +211,7 @@ static vaddr_t getsecond10(vaddr_t addr){
 	unsigned int second_10_bits = (highest_20_bits & (0x3FF));
 	return second_10_bits;
 	//printf("\n%d,%d",highest_10_bits,second_10_bits);
-}
+}*/
 
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
@@ -267,8 +268,18 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
 	stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
 	stacktop = USERSTACK;
-
-	int ind=getfirst10(faultaddress);
+	struct PTE *temp=as->pgdir;
+	while(temp!=NULL){
+		if(faultaddress>=temp->vaddr && faultaddress<temp->vaddr+PAGE_SIZE)
+			{
+				paddr=faultaddress-temp->vaddr + temp->paddr;
+				break;
+			}
+			temp=temp->next;
+	}
+	if(paddr==0)
+		return EFAULT;
+	/*int ind=getfirst10(faultaddress);
 	if(as->pgdir[ind].pg_table==NULL){
 		as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
 		paddr=KVADDR_TO_PADDR(faultaddress);
@@ -279,7 +290,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		paddr=(faultaddress-PADDR_TO_KVADDR(paddr))+paddr;
 	}
 
-
+*/
 	/*if (faultaddress >= vbase1 && faultaddress < vtop1) {
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
 	}

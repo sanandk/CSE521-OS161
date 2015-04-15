@@ -65,7 +65,8 @@ as_create(void)
 	if (as==NULL) {
 		return NULL;
 	}
-	as->pgdir=(struct page_table*)kmalloc(1024*sizeof(struct page_table));
+	//as->pgdir=(struct PTE*)kmalloc(1024*sizeof(struct PTE));
+	as->pgdir=NULL;
 	as->as_vbase1 = 0;
 	as->as_pbase1 = 0;
 	as->as_npages1 = 0;
@@ -76,10 +77,6 @@ as_create(void)
 	as->as_heap_start = 0;
 	as->as_heap_end = 0;
 
-	for(int i=0;i<1024;i++)
-	{
-		as->pgdir[i].pg_table=NULL;
-	}
 	return as;
 }
 
@@ -105,7 +102,7 @@ as_activate(struct addrspace *as)
 
 	splx(spl);
 }
-
+/*
 static vaddr_t getfirst10(vaddr_t addr){
 
 	//unsigned int myuint32=0xADADADAD;
@@ -135,7 +132,7 @@ static void gettemppermissions(int *a, vaddr_t addr){
 	a[0]=first;
 	a[1]=second;
 	a[2]=third;
-}
+}*/
 static paddr_t ROUNDDOWN(paddr_t size)
 {
 	if(size%PAGE_SIZE!=0)
@@ -144,7 +141,7 @@ static paddr_t ROUNDDOWN(paddr_t size)
 	size-=PAGE_SIZE;
 	}
 	return size;
-}
+}/*
 static void getpermissions(int *a, vaddr_t addr){
 	unsigned int last_12_bits = (addr & (0xFFF));
 	unsigned int final = (last_12_bits & (0x1FFFF << (12 - 3))) >> (12 - 3);
@@ -155,7 +152,7 @@ static void getpermissions(int *a, vaddr_t addr){
 	a[0]=first;
 	a[1]=second;
 	a[2]=third;
-}
+}*/
 
 static vaddr_t set_bit(int val, vaddr_t addr, int bit){
 	// 9 - execute, 10 - write, 11 - read
@@ -183,7 +180,12 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	if (as->as_vbase1 == 0) {
 		as->as_vbase1 = vaddr;
 		as->as_npages1 = npages;
+		as->as_perm1=0;
+		as->as_perm1=set_bit(readable,as->as_perm1, READ_BIT);
+		as->as_perm1=set_bit(writeable,as->as_perm1, WRITE_BIT);
+		as->as_perm1=set_bit(executable,as->as_perm1, EXEC_BIT);
 
+		/*
 		paddr_t PPN=as->as_pbase1;
 		PPN=set_bit(readable,PPN, READ_BIT);
 		PPN=set_bit(writeable,PPN, WRITE_BIT);
@@ -193,15 +195,19 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
 
 		as->pgdir[ind].pg_table[getsecond10(vaddr)]=PPN;
-
+*/
 		return 0;
 	}
 
 	if (as->as_vbase2 == 0) {
 		as->as_vbase2 = vaddr;
 		as->as_npages2 = npages;
+		as->as_perm2=0;
+		as->as_perm2=set_bit(readable,as->as_perm1, READ_BIT);
+		as->as_perm2=set_bit(writeable,as->as_perm1, WRITE_BIT);
+		as->as_perm2=set_bit(executable,as->as_perm1, EXEC_BIT);
 
-		paddr_t PPN=as->as_pbase2;
+	/*	paddr_t PPN=as->as_pbase2;
 		PPN=set_bit(readable,PPN, READ_BIT);
 		PPN=set_bit(writeable,PPN, WRITE_BIT);
 		PPN=set_bit(executable,PPN, EXEC_BIT);
@@ -209,7 +215,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		if(as->pgdir[ind].pg_table==NULL)
 			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
 		as->pgdir[ind].pg_table[getsecond10(vaddr)]=PPN;
-
+*/
 		as->as_heap_start=ROUNDDOWN(vaddr + (npages*PAGE_SIZE));
 		return 0;
 	}
@@ -227,7 +233,7 @@ as_zero_region(paddr_t paddr, unsigned npages)
 {
 	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
 }
-
+/*
 static void copy_perm_temp(struct addrspace *as, paddr_t paddr){
 	int a[3];
 	vaddr_t vaddr;
@@ -262,33 +268,110 @@ static void revert_perm_temp(struct addrspace *as, paddr_t paddr){
 			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
 	as->pgdir[ind].pg_table[getsecond10(vaddr)]=paddr;
 }
-
+*/
+/*static paddr_t getpaddrfromcore(vaddr_t va)
+{
+	for(int i=0;i<last_index;i++)
+	{
+		if(core_map[i].vaddr<=va && core_map[i].vaddr+PAGE_SIZE>va)
+		{
+			core_map[i].pstate=DIRTY;
+			core_map[i].npages=1;
+			return core_map[i].paddr;
+		}
+	}
+	return 0;
+}*/
 int
 as_prepare_load(struct addrspace *as)
 {
 	KASSERT(as->as_pbase1 == 0);
 	KASSERT(as->as_pbase2 == 0);
 	KASSERT(as->as_stackpbase == 0);
-	as->as_pbase1 = alloc_kpages(as->as_npages1);
-	if (as->as_pbase1 == 0) {
-		return ENOMEM;
+	int i;
+	paddr_t pa;
+	vaddr_t va=as->as_vbase1;
+	struct PTE *pg,*temp;
+	for(i=0;i<(int)as->as_npages1;i++)
+	{
+		if(as->pgdir==NULL){
+			as->pgdir=(struct PTE *)kmalloc(sizeof(struct PTE));
+			as->pgdir->next=NULL;
+			as->pgdir->perm=as->as_perm1;
+			as->pgdir->vaddr=va;
+			pa=alloc_page();
+			if(pa==0)
+				return ENOMEM;
+			as->pgdir->paddr=pa;
+			}
+		else{
+			temp=as->pgdir;
+			while(temp->next!=NULL)
+				temp=temp->next;
+			pg=(struct PTE *)kmalloc(sizeof(struct PTE));
+			pg->next=NULL;
+			pg->perm=as->as_perm1;
+			pg->vaddr=va;
+			pa=alloc_page();
+			if(pa==0)
+				return ENOMEM;
+			pg->paddr=pa;
+			temp->next=pg;
+		}
+		va+=PAGE_SIZE;
+		if(as->as_pbase1==0)
+			as->as_pbase1=pa;
 	}
-	copy_perm_temp(as, as->as_pbase1);
-
-	as->as_pbase2 = alloc_kpages(as->as_npages2);
-
-	if (as->as_pbase2 == 0) {
-		return ENOMEM;
+	va=as->as_vbase2;
+	for(i=0;i<(int)as->as_npages2;i++)
+	{
+		if(as->pgdir==NULL){
+			as->pgdir=(struct PTE *)kmalloc(sizeof(struct PTE));
+			as->pgdir->next=NULL;
+			as->pgdir->perm=as->as_perm2;
+			as->pgdir->vaddr=va;
+			pa=alloc_page();
+			if(pa==0)
+				return ENOMEM;
+			as->pgdir->paddr=pa;
+			}
+		else{
+			temp=as->pgdir;
+			while(temp->next!=NULL)
+				temp=temp->next;
+			pg=(struct PTE *)kmalloc(sizeof(struct PTE));
+			pg->next=NULL;
+			pg->perm=as->as_perm2;
+			pg->vaddr=va;
+			pa=alloc_page();
+			if(pa==0)
+				return ENOMEM;
+			pg->paddr=pa;
+			temp->next=pg;
+		}
+		va+=PAGE_SIZE;
+		if(as->as_pbase2==0)
+			as->as_pbase2=pa;
 	}
 
-	copy_perm_temp(as, as->as_pbase2);
+	va=USERSTACK-(DUMBVM_STACKPAGES*PAGE_SIZE);
 
-	as->as_stackpbase = alloc_kpages(DUMBVM_STACKPAGES);
-	if (as->as_stackpbase == 0) {
-		return ENOMEM;
+	for(int i=0;i<DUMBVM_STACKPAGES;i++)
+	{
+		temp=as->pgdir;
+		while(temp->next!=NULL)
+			temp=temp->next;
+		pg=(struct PTE *)kmalloc(sizeof(struct PTE));
+		pg->next=NULL;
+		pg->perm=as->as_perm1;
+		pg->vaddr=va;
+		pa=alloc_page();
+		if(pa==0)
+			return ENOMEM;
+		pg->paddr=pa;
+		temp->next=pg;
+		va+=PAGE_SIZE;
 	}
-
-	copy_perm_temp(as, as->as_stackpbase);
 
 	as_zero_region(as->as_pbase1, as->as_npages1);
 	as_zero_region(as->as_pbase2, as->as_npages2);
@@ -300,10 +383,11 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
-	revert_perm_temp(as, as->as_pbase1);
+	/*revert_perm_temp(as, as->as_pbase1);
 	revert_perm_temp(as, as->as_pbase2);
 	revert_perm_temp(as, as->as_stackpbase);
-
+*/
+	(void)as;
 	return 0;
 }
 
@@ -311,7 +395,7 @@ int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
 	KASSERT(as->as_stackpbase != 0);
-
+	as->as_stackpbase=USERSTACK;
 	*stackptr = USERSTACK;
 	return 0;
 }

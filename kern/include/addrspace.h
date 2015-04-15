@@ -40,8 +40,11 @@
 
 struct vnode;
 
-struct page_table{
-   vaddr_t *pg_table;
+struct PTE{
+   vaddr_t vaddr;
+   paddr_t paddr;
+   int perm;
+   struct PTE *next;
 };
 
 /* 
@@ -57,13 +60,14 @@ struct addrspace {
        vaddr_t as_vbase1;
 	   paddr_t as_pbase1;
 	   size_t as_npages1;
+	   int as_perm1,as_perm2;
 	   vaddr_t as_vbase2;
 	   paddr_t as_pbase2;
 	   size_t as_npages2;
 	   paddr_t as_heap_start;
 	   paddr_t as_heap_end;
 	   paddr_t as_stackpbase;
-	   struct page_table *pgdir;
+	   struct PTE *pgdir;
 
 };
 

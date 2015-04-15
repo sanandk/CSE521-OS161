@@ -121,7 +121,7 @@ boot(void)
 	DEBUG(DB_VM, "Initialize pseudo-devices");
 	pseudoconfig();
 	kprintf("\n");
-
+	kprintf("\nVM_BOOT\n");
 	/* Late phase of initialization. */
 	vm_bootstrap();
 	kprintf_bootstrap();

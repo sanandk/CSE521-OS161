@@ -31,57 +31,22 @@
 #include <kern/errno.h>
 #include <lib.h>
 #include <addrspace.h>
+
+
+#include <spl.h>
+#include <spinlock.h>
+#include <thread.h>
+#include <current.h>
+#include <mips/tlb.h>
 #include <vm.h>
-
-/*
- * Note! If OPT_DUMBVM is set, as is the case until you start the VM
- * assignment, this file is not compiled or linked or in any way
- * used. The cheesy hack versions in dumbvm.c are used instead.
- */
-
-struct addrspace *
-as_create(void)
-{
-	struct addrspace *as;
-
-	as = kmalloc(sizeof(struct addrspace));
-	if (as == NULL) {
-		return NULL;
-	}
-
-	/*
-	 * Initialize as needed.
-	 */
-
-	return as;
-}
-
-int
-as_copy(struct addrspace *old, struct addrspace **ret)
-{
-		return 0;
-
-}
-
-void
-as_destroy(struct addrspace *as)
-{
-	/*
-	 * Clean up as needed.
-	 */
-	
-	kfree(as);
-}
-
-void
-as_activate(struct addrspace *as)
-{
-	/*
-	 * Write this.
-	 */
-
-	(void)as;  // suppress warning until code gets written
-}
+#define DUMBVM_STACKPAGES    12
+// 9 - execute, 10 - write, 11 - read
+#define READ_BIT 11
+#define WRITE_BIT 10
+#define EXEC_BIT 9
+#define TEMP_READ_BIT 2
+#define TEMP_WRITE_BIT 1
+#define TEMP_EXEC_BIT 0
 
 /*
  * Set up a segment at virtual address VADDR of size MEMSIZE. The
@@ -93,56 +58,312 @@ as_activate(struct addrspace *as)
  * moment, these are ignored. When you write the VM system, you may
  * want to implement them.
  */
+struct addrspace *
+as_create(void)
+{
+	struct addrspace *as = kmalloc(sizeof(struct addrspace));
+	if (as==NULL) {
+		return NULL;
+	}
+	as->pgdir=(struct page_table*)kmalloc(1024*sizeof(struct page_table));
+	as->as_vbase1 = 0;
+	as->as_pbase1 = 0;
+	as->as_npages1 = 0;
+	as->as_vbase2 = 0;
+	as->as_pbase2 = 0;
+	as->as_npages2 = 0;
+	as->as_stackpbase = 0;
+	as->as_heap_start = 0;
+	as->as_heap_end = 0;
+
+	for(int i=0;i<1024;i++)
+	{
+		as->pgdir[i].pg_table=NULL;
+	}
+	return as;
+}
+
+void
+as_destroy(struct addrspace *as)
+{
+	kfree(as);
+}
+
+void
+as_activate(struct addrspace *as)
+{
+	int i,spl;
+
+	(void)as;
+
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+
+	for (i=0; i<64; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
+}
+
+static vaddr_t getfirst10(vaddr_t addr){
+
+	//unsigned int myuint32=0xADADADAD;
+	unsigned int highest_10_bits = (addr & (0x1FFFF << (32 - 10))) >> (32 - 10);
+	//unsigned int highest_20_bits = (addr & (0x1FFFF << (32 - 20))) >> (32 - 20);
+	//unsigned int second_10_bits = (highest_20_bits & (0x3FF));
+	return highest_10_bits;
+	//printf("\n%d,%d",highest_10_bits,second_10_bits);
+}
+
+static vaddr_t getsecond10(vaddr_t addr){
+
+	//unsigned int myuint32=0xADADADAD;
+	unsigned int highest_20_bits = (addr & (0x1FFFF << (32 - 20))) >> (32 - 20);
+	unsigned int second_10_bits = (highest_20_bits & (0x3FF));
+	return second_10_bits;
+	//printf("\n%d,%d",highest_10_bits,second_10_bits);
+}
+
+static void gettemppermissions(int *a, vaddr_t addr){
+
+	unsigned int last_3 = (addr & (0x6F));
+	unsigned int first2 = (last_3 & (0x1FFFF << (3 - 2))) >> (3 - 2);
+	unsigned int first = (first2 & (0x1FFFF << (2 - 1))) >> (2 - 1);
+	unsigned int second = (first2 & (0x1));
+	unsigned int third = (last_3 & (0x1));
+	a[0]=first;
+	a[1]=second;
+	a[2]=third;
+}
+static paddr_t ROUNDDOWN(paddr_t size)
+{
+	if(size%PAGE_SIZE!=0)
+	{
+	size = ((size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE-1));
+	size-=PAGE_SIZE;
+	}
+	return size;
+}
+static void getpermissions(int *a, vaddr_t addr){
+	unsigned int last_12_bits = (addr & (0xFFF));
+	unsigned int final = (last_12_bits & (0x1FFFF << (12 - 3))) >> (12 - 3);
+	unsigned int first2 = (final & (0x1FFFF << (3 - 2))) >> (3 - 2);
+	unsigned int first = (first2 & (0x1FFFF << (2 - 1))) >> (2 - 1);
+	unsigned int second = (first2 & (0x1));
+	unsigned int third = (final & (0x1));
+	a[0]=first;
+	a[1]=second;
+	a[2]=third;
+}
+
+static vaddr_t set_bit(int val, vaddr_t addr, int bit){
+	// 9 - execute, 10 - write, 11 - read
+	///addr |= (1u << 9);	// set 1 in 9th bit from 0
+	if(val==1)
+		addr |= (1u << bit);
+	else
+		addr &= ~(1u << bit);
+	return addr;
+}
+
 int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable)
 {
-	/*
-	 * Write this.
-	 */
+	size_t npages;
+	/* Align the region. First, the base... */
+	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
 
-	(void)as;
-	(void)vaddr;
-	(void)sz;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
+	/* ...and now the length. */
+	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
+	npages = sz / PAGE_SIZE;
+
+	if (as->as_vbase1 == 0) {
+		as->as_vbase1 = vaddr;
+		as->as_npages1 = npages;
+
+		paddr_t PPN=as->as_pbase1;
+		PPN=set_bit(readable,PPN, READ_BIT);
+		PPN=set_bit(writeable,PPN, WRITE_BIT);
+		PPN=set_bit(executable,PPN, EXEC_BIT);
+		int ind=getfirst10(vaddr);
+		if(as->pgdir[ind].pg_table==NULL)
+			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
+
+		as->pgdir[ind].pg_table[getsecond10(vaddr)]=PPN;
+
+		return 0;
+	}
+
+	if (as->as_vbase2 == 0) {
+		as->as_vbase2 = vaddr;
+		as->as_npages2 = npages;
+
+		paddr_t PPN=as->as_pbase2;
+		PPN=set_bit(readable,PPN, READ_BIT);
+		PPN=set_bit(writeable,PPN, WRITE_BIT);
+		PPN=set_bit(executable,PPN, EXEC_BIT);
+		int ind=getfirst10(vaddr);
+		if(as->pgdir[ind].pg_table==NULL)
+			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
+		as->pgdir[ind].pg_table[getsecond10(vaddr)]=PPN;
+
+		as->as_heap_start=ROUNDDOWN(vaddr + (npages*PAGE_SIZE));
+		return 0;
+	}
+
+	/*
+	 * Support for more than two regions is not available.
+	 */
+	kprintf("dumbvm: Warning: too many regions\n");
 	return EUNIMP;
+}
+
+static
+void
+as_zero_region(paddr_t paddr, unsigned npages)
+{
+	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
+}
+
+static void copy_perm_temp(struct addrspace *as, paddr_t paddr){
+	int a[3];
+	vaddr_t vaddr;
+	getpermissions(a, paddr);
+	paddr=set_bit(a[0],paddr,TEMP_READ_BIT);
+	paddr=set_bit(a[1],paddr,TEMP_WRITE_BIT);
+	paddr=set_bit(a[2],paddr,TEMP_EXEC_BIT);
+
+	paddr=set_bit(1,paddr, READ_BIT);
+	paddr=set_bit(1,paddr, WRITE_BIT);
+
+	vaddr=PADDR_TO_KVADDR(paddr);
+	int ind=getfirst10(vaddr);
+	if(as->pgdir[ind].pg_table==NULL)
+			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
+	as->pgdir[ind].pg_table[getsecond10(vaddr)]=paddr;
+}
+static void revert_perm_temp(struct addrspace *as, paddr_t paddr){
+	int a[3];
+	gettemppermissions(a, paddr);
+	paddr=set_bit(a[0],paddr,READ_BIT);
+	paddr=set_bit(a[1],paddr,WRITE_BIT);
+	paddr=set_bit(a[2],paddr,EXEC_BIT);
+
+	paddr=set_bit(0,paddr, TEMP_READ_BIT);
+	paddr=set_bit(0,paddr, TEMP_WRITE_BIT);
+	paddr=set_bit(0,paddr, TEMP_EXEC_BIT);
+
+	vaddr_t vaddr=PADDR_TO_KVADDR(paddr);
+	int ind=getfirst10(vaddr);
+	if(as->pgdir[ind].pg_table==NULL)
+			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
+	as->pgdir[ind].pg_table[getsecond10(vaddr)]=paddr;
 }
 
 int
 as_prepare_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
+	KASSERT(as->as_pbase1 == 0);
+	KASSERT(as->as_pbase2 == 0);
+	KASSERT(as->as_stackpbase == 0);
+	as->as_pbase1 = alloc_kpages(as->as_npages1);
+	if (as->as_pbase1 == 0) {
+		return ENOMEM;
+	}
+	copy_perm_temp(as, as->as_pbase1);
 
-	(void)as;
+	as->as_pbase2 = alloc_kpages(as->as_npages2);
+
+	if (as->as_pbase2 == 0) {
+		return ENOMEM;
+	}
+
+	copy_perm_temp(as, as->as_pbase2);
+
+	as->as_stackpbase = alloc_kpages(DUMBVM_STACKPAGES);
+	if (as->as_stackpbase == 0) {
+		return ENOMEM;
+	}
+
+	copy_perm_temp(as, as->as_stackpbase);
+
+	as_zero_region(as->as_pbase1, as->as_npages1);
+	as_zero_region(as->as_pbase2, as->as_npages2);
+	as_zero_region(as->as_stackpbase, DUMBVM_STACKPAGES);
+
 	return 0;
 }
 
 int
 as_complete_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
+	revert_perm_temp(as, as->as_pbase1);
+	revert_perm_temp(as, as->as_pbase2);
+	revert_perm_temp(as, as->as_stackpbase);
 
-	(void)as;
 	return 0;
 }
 
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/*
-	 * Write this.
-	 */
+	KASSERT(as->as_stackpbase != 0);
 
-	(void)as;
-
-	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
+	return 0;
+}
+
+int
+as_copy(struct addrspace *old, struct addrspace **ret)
+{
+	struct addrspace *new;
+
+	new = as_create();
+	if (new==NULL) {
+		return ENOMEM;
+	}
+
+	new->as_vbase1 = old->as_vbase1;
+	new->as_npages1 = old->as_npages1;
+	new->as_vbase2 = old->as_vbase2;
+	new->as_npages2 = old->as_npages2;
+
+	new->as_heap_start=old->as_heap_start;
+	new->as_heap_end=old->as_heap_end;
+	new->pgdir=old->pgdir;
+	/*for(int i=0;i<1024;i++)
+	{
+		for(int j=0;j<1024;j++)
+		{
+			(new->pgdir[i]).pg_table[j] =(old->pgdir[i]).pg_table[j];
+		}
+	}*/
+
+	/* (Mis)use as_prepare_load to allocate some physical memory. */
+	if (as_prepare_load(new)) {
+		as_destroy(new);
+		return ENOMEM;
+	}
+
+	KASSERT(new->as_pbase1 != 0);
+	KASSERT(new->as_pbase2 != 0);
+	KASSERT(new->as_stackpbase != 0);
+
+	memmove((void *)PADDR_TO_KVADDR(new->as_pbase1),
+		(const void *)PADDR_TO_KVADDR(old->as_pbase1),
+		old->as_npages1*PAGE_SIZE);
+
+	memmove((void *)PADDR_TO_KVADDR(new->as_pbase2),
+		(const void *)PADDR_TO_KVADDR(old->as_pbase2),
+		old->as_npages2*PAGE_SIZE);
+
+	memmove((void *)PADDR_TO_KVADDR(new->as_stackpbase),
+		(const void *)PADDR_TO_KVADDR(old->as_stackpbase),
+		DUMBVM_STACKPAGES*PAGE_SIZE);
 	
+	*ret = new;
 	return 0;
 }

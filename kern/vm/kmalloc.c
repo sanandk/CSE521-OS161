@@ -30,6 +30,7 @@
 #include <types.h>
 #include <lib.h>
 #include <spinlock.h>
+#include <addrspace.h>
 #include <vm.h>
 
 /*

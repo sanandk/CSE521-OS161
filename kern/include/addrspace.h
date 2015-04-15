@@ -40,6 +40,9 @@
 
 struct vnode;
 
+struct page_table{
+   vaddr_t *pg_table;
+};
 
 /* 
  * Address space - data structure associated with the virtual memory
@@ -49,17 +52,19 @@ struct vnode;
  */
 
 struct addrspace {
-#if OPT_DUMBVM
-        vaddr_t as_vbase1;
-        paddr_t as_pbase1;
-        size_t as_npages1;
-        vaddr_t as_vbase2;
-        paddr_t as_pbase2;
-        size_t as_npages2;
-        paddr_t as_stackpbase;
-#else
+
         /* Put stuff here for your VM system */
-#endif
+       vaddr_t as_vbase1;
+	   paddr_t as_pbase1;
+	   size_t as_npages1;
+	   vaddr_t as_vbase2;
+	   paddr_t as_pbase2;
+	   size_t as_npages2;
+	   paddr_t as_heap_start;
+	   paddr_t as_heap_end;
+	   paddr_t as_stackpbase;
+	   struct page_table *pgdir;
+
 };
 
 /*

@@ -104,9 +104,10 @@ cmd_progthread(void *ptr, unsigned long nargs)
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
+		sys___exit(1);
 		return;
 	}
-
+	sys___exit(0);
 	/* NOTREACHED: runprogram only returns on error. */
 }
 

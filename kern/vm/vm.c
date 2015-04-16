@@ -46,7 +46,7 @@ vm_bootstrap(void)
 
 	// Set page as fixed for paddr 0 to freeaddr
 	free_index=getpageindex(freeaddr);
-	last_index=getpageindex(lastaddr);
+	//last_index=getpageindex(lastaddr);
 	last_index=total_page_num;
 	for(int i=0;i<total_page_num;i++)
 	{
@@ -85,7 +85,7 @@ vaddr_t alloc_page(void)
 	}
 	//pa= freeaddr + (found * PAGE_SIZE);
 	pa=core_map[found].paddr;
-
+	//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	return pa;
 }
 
@@ -124,8 +124,8 @@ alloc_kpages(int npages)
 				{
 					for(int j=start;j<=i;j++)
 					{
-					core_map[start].pstate=FIXED;
-					core_map[start].npages=npages;
+					core_map[j].pstate=DIRTY;
+					core_map[j].npages=npages;
 					}
 					found=i;
 					break;
@@ -150,27 +150,27 @@ alloc_kpages(int npages)
 }
 
 void
-free_page(vaddr_t addr)
+free_page(paddr_t addr)
 {
+	spinlock_acquire(&stealmem_lock);
 	for(int i=0;i<last_index;i++)
 	{
-		if((vaddr_t)(i*PAGE_SIZE)==addr)
+		if(core_map[i].paddr==addr)
 		{
-			//for(int j=i;j<i+core_map[i].npages;j++)
-			{
-				core_map[i].pstate=FREE;
-			}
+			core_map[i].pstate=FREE;
 			break;
 		}
 	}
+	spinlock_release(&stealmem_lock);
 }
 
 void
 free_kpages(vaddr_t addr)
 {
+	spinlock_acquire(&stealmem_lock);
 	for(int i=0;i<last_index;i++)
 	{
-		if((freeaddr+(i*PAGE_SIZE))==addr)
+		if(core_map[i].vaddr==addr)
 		{
 			for(int j=i;j<i+core_map[i].npages;j++)
 			{
@@ -179,6 +179,7 @@ free_kpages(vaddr_t addr)
 			break;
 		}
 	}
+	spinlock_release(&stealmem_lock);
 }
 
 void
@@ -216,8 +217,8 @@ static vaddr_t getsecond10(vaddr_t addr){
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
-	vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
-	paddr_t paddr;
+	//vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
+	paddr_t paddr=0;
 	int i;
 	uint32_t ehi, elo;
 	struct addrspace *as;
@@ -249,7 +250,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 	/* Assert that the address space has been set up properly. */
-	KASSERT(as->as_vbase1 != 0);
+	/*KASSERT(as->as_vbase1 != 0);
 	KASSERT(as->as_pbase1 != 0);
 	KASSERT(as->as_npages1 != 0);
 	KASSERT(as->as_vbase2 != 0);
@@ -267,18 +268,56 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	vbase2 = as->as_vbase2;
 	vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
 	stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
-	stacktop = USERSTACK;
-	struct PTE *temp=as->pgdir;
-	while(temp!=NULL){
-		if(faultaddress>=temp->vaddr && faultaddress<temp->vaddr+PAGE_SIZE)
+	stacktop = USERSTACK;*/
+	struct addrspace *rtemp=as;
+	struct PTE *temp;
+	int found=0;
+	while(rtemp!=NULL)
+	{
+		temp=rtemp->pages;
+		while(temp!=NULL){
+			if(faultaddress>=temp->vaddr && faultaddress<temp->vaddr+PAGE_SIZE)
 			{
 				paddr=faultaddress-temp->vaddr + temp->paddr;
+				found=1;
 				break;
 			}
 			temp=temp->next;
+		}
+		if(found==1)
+			break;
+		rtemp=rtemp->next;
 	}
+	if(found==0)
+		{
+			struct PTE *temp=as->stack->pages;
+			while(temp!=NULL){
+				if(faultaddress>=temp->vaddr && faultaddress<temp->vaddr+PAGE_SIZE)
+					{
+						paddr=faultaddress-temp->vaddr + temp->paddr;
+						found=1;
+						break;
+					}
+					temp=temp->next;
+			}
+		}
+	if(found==0)
+		{
+			struct PTE *temp=as->heap->pages;
+			while(temp!=NULL){
+				if(faultaddress>=temp->vaddr && faultaddress<temp->vaddr+PAGE_SIZE)
+					{
+						paddr=faultaddress-temp->vaddr + temp->paddr;
+						found=1;
+						break;
+					}
+					temp=temp->next;
+			}
+		}
 	if(paddr==0)
+	{
 		return EFAULT;
+	}
 	/*int ind=getfirst10(faultaddress);
 	if(as->pgdir[ind].pg_table==NULL){
 		as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));

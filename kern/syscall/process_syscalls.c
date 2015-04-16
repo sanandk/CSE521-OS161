@@ -167,7 +167,6 @@ sys___fork(int *ret,struct trapframe * tf)
 	int result=as_copy(curthread->t_addrspace,&child_addrspace);
 	if(result)
 	{
-
 		return ENOMEM;
 	}
 
@@ -181,9 +180,9 @@ sys___fork(int *ret,struct trapframe * tf)
 	//if (child_addrspace==NULL)
 		//return ENOMEM;
 
-	result = thread_fork("sys_fork", (void *) entrypoint, child_tf, (unsigned long int)child_addrspace, &child_thread);
+	result = thread_fork("sys_fork", (void *) entrypoint, child_tf, (unsigned long)child_addrspace, &child_thread);
 	if(result)
-		return result;
+		return ENOMEM;
 
 	*ret=child_thread->process_id;
 	return 0;

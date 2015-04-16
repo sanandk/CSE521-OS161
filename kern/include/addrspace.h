@@ -47,16 +47,25 @@ struct PTE{
    struct PTE *next;
 };
 
+struct addrspace{
+    vaddr_t as_vbase;
+	paddr_t as_pbase;
+	size_t as_npages;
+	int as_perm;
+	struct PTE *pages;
+	struct addrspace *next;
+	struct addrspace *heap, *stack;
+};
+
 /* 
  * Address space - data structure associated with the virtual memory
  * space of a process.
  *
  * You write this.
  */
-
+/*
 struct addrspace {
 
-        /* Put stuff here for your VM system */
        vaddr_t as_vbase1;
 	   paddr_t as_pbase1;
 	   size_t as_npages1;
@@ -69,7 +78,7 @@ struct addrspace {
 	   paddr_t as_stackpbase;
 	   struct PTE *pgdir;
 
-};
+};*/
 
 /*
  * Functions in addrspace.c:

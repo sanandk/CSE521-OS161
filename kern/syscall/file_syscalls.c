@@ -65,7 +65,7 @@ int std_open(int fd, int flags)
 			return EINVAL;
 		}
 
-		curthread->f_handles[i]=kmalloc(sizeof(*curthread->f_handles[i]));
+		curthread->f_handles[i]=kmalloc(sizeof(struct file_handle));
 		curthread->f_handles[i]->file_counter=1;
 		curthread->f_handles[i]->file_name=kstrdup(c);
 		curthread->f_handles[i]->file_offset=0;

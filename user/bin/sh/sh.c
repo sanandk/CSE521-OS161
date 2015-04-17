@@ -355,6 +355,7 @@ docommand(char *buf)
 	}
 
 	pid = fork();
+
 	switch (pid) {
 		case -1:
 			/* error */

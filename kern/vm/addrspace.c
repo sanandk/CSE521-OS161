@@ -232,7 +232,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		reg->as_perm=set_bit(readable,as->as_perm, READ_BIT);
 		reg->as_perm=set_bit(writeable,as->as_perm, WRITE_BIT);
 		reg->as_perm=set_bit(executable,as->as_perm, EXEC_BIT);
-		temp->pages=NULL;
+		reg->pages=NULL;
 		reg->next=NULL;
 		temp->next=reg;
 	}
@@ -431,6 +431,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		if(new==NULL || new->as_npages==0){
 				ntemp = (struct addrspace*) kmalloc(sizeof(struct addrspace));
 				ntemp->as_npages=otemp->as_npages;
+				ntemp->pages=NULL;
 				ntemp->as_vbase=otemp->as_vbase;
 				ntemp->as_pbase=otemp->as_pbase;
 				ntemp->as_perm=otemp->as_perm;
@@ -445,6 +446,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				reg->as_npages=otemp->as_npages;
 				reg->as_vbase=otemp->as_vbase;
 				reg->as_pbase=otemp->as_pbase;
+				reg->pages=NULL;
 				reg->as_perm=otemp->as_perm;
 				reg->next=NULL;
 				ntemp->next=reg;
@@ -452,7 +454,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		otemp=otemp->next;
 	}
 
-	otemp=old->stack;
 	new->heap = (struct addrspace*) kmalloc(sizeof(struct addrspace));
 	new->heap->as_npages=old->heap->as_npages;
 	new->heap->as_vbase=old->heap->as_vbase;
@@ -471,7 +472,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	new->stack->next=NULL;
 	new->stack->pages=NULL;
 
-	// COPY stack pages and region pages
 
 	/* (Mis)use as_prepare_load to allocate some physical memory. */
 	if (as_prepare_load(new)) {
@@ -480,6 +480,24 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	struct PTE *temp1=old->pages,*temp2=new->pages;
+
+	while(temp1!=NULL)
+	{
+		memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
+						(const void *)PADDR_TO_KVADDR(temp1->paddr),
+						PAGE_SIZE);
+		/*memmove((void *)PADDR_TO_KVADDR(temp2->vaddr),
+								(const void *)PADDR_TO_KVADDR(temp1->vaddr),
+								PAGE_SIZE);
+		memmove((void *)PADDR_TO_KVADDR(temp2->perm),
+								(const void *)PADDR_TO_KVADDR(temp1->perm),
+								sizeof(int));*/
+		temp1=temp1->next;
+		temp2=temp2->next;
+	}
+
+	temp1=old->stack->pages;
+	temp2=new->stack->pages;
 
 	while(temp1!=NULL)
 	{

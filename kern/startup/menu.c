@@ -85,22 +85,29 @@ static
 void
 cmd_progthread(void *ptr, unsigned long nargs)
 {
-	char **args = ptr;
-	char progname[128];
+	char **args = ptr,*ar[25];
+	char *progname;
 	int result;
 
 	KASSERT(nargs >= 1);
 
-	if (nargs > 2) {
+	/*if (nargs > 2) {
 		kprintf("Warning: argument passing from menu not supported\n");
-	}
+	}*/
+
+	if(nargs==1)
+		args[1]=NULL;
+	else
+		args[nargs]=NULL;
 
 	/* Hope we fit. */
-	KASSERT(strlen(args[0]) < sizeof(progname));
+	//KASSERT(strlen(args[0]) < sizeof(progname));
+	progname=kstrdup(args[0]);
+	//strcpy(progname, args[0]);
+	for(int i=0;i<(int)nargs;i++)
+		ar[i]=kstrdup(args[i]);
 
-	strcpy(progname, args[0]);
-
-	result = runprogram(progname,nargs,args);
+	result = runprogram(progname,nargs,ar);
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));

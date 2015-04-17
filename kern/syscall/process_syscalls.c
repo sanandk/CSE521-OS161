@@ -194,7 +194,7 @@ sys___fork(int *ret,struct trapframe * tf)
 int
 sys___execv(int *ret,const char *program, char **uargs)
 {
-
+	struct lock *lk=lock_create("execv");
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result,argc;
@@ -202,11 +202,11 @@ sys___execv(int *ret,const char *program, char **uargs)
 	size_t len;
 
 	*ret=-1;
-
+	lock_acquire(lk);
 	if(program==NULL || uargs == NULL)
 		return EFAULT;
 
-	pname=kmalloc(sizeof(char)*PATH_MAX);
+	pname=(char *)kmalloc(sizeof(char)*PATH_MAX);
 
 	result= copyinstr((const_userptr_t) program, pname, PATH_MAX, &len);
 
@@ -216,7 +216,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 	if(len < 2 || len >PATH_MAX)
 		return EINVAL;
 
-	argv=kmalloc(sizeof(char**));
+	argv=(char **)kmalloc(sizeof(char**));
 	result= copyin((const_userptr_t) uargs, argv, sizeof(argv));
 
 	if (result)
@@ -225,7 +225,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 	int i=0;
 
 	while(uargs[i]!=NULL){
-			argv[i] = kmalloc(sizeof(uargs[i]));
+			argv[i] = (char *)kmalloc(sizeof(char)*PATH_MAX);
 			result = copyinstr((const_userptr_t) uargs[i],argv[i], PATH_MAX, &len);
 			if(len>ARG_MAX)
 				return E2BIG;
@@ -233,13 +233,18 @@ sys___execv(int *ret,const char *program, char **uargs)
 				return result;
 			i++;
 	}
-
+	argv[i]=NULL;
 	argc=i;
 
 	/* Open the file. */
 	result = vfs_open(pname, O_RDONLY, 0, &v);
 	if (result) {
 		return result;
+	}
+
+	if(curthread->t_addrspace !=NULL){
+		as_destroy(curthread->t_addrspace );
+		curthread->t_addrspace =NULL;
 	}
 
 	/* Create a new address space. */
@@ -273,13 +278,14 @@ sys___execv(int *ret,const char *program, char **uargs)
 
 	int olen;
 	i=0;
-	while(i<argc)
+	//while(i<argc)
+	while(argv[i]!=NULL)
 	{
 		//kprintf("%s\n",argv[i++]);
 		len=strlen(argv[i])+1;
 		olen=len;
 		if(len%4!=0)
-			len=len+4-(len%4);
+			len=len+(4-len%4);
 
 		char *str=kmalloc(sizeof(len));
 		str=kstrdup(argv[i]);	//dont need actually
@@ -303,9 +309,9 @@ sys___execv(int *ret,const char *program, char **uargs)
 		i++;
 	}
 
-	//if(argv[i]==NULL){
+	if(argv[i]==NULL){
 		stackptr-=4*sizeof(char);
-	//}
+	}
 
 	for(i=argc-1;i>=0;i--)
 	{
@@ -314,7 +320,8 @@ sys___execv(int *ret,const char *program, char **uargs)
 		if(res)
 			return EFAULT;
 	}
-
+	lock_release(lk);
+	kprintf("=%d=%d=",i,argc);
 	/* Warp to user mode. */
 	enter_new_process(argc, (userptr_t)stackptr,
 			  stackptr, entrypoint);

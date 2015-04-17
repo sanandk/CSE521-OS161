@@ -340,7 +340,7 @@ as_prepare_load(struct addrspace *as)
 	}
 
 	as->heap = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-	as->heap->as_npages=DUMBVM_STACKPAGES;
+	as->heap->as_npages=1;
 	as->heap->as_vbase=va;
 	as->heap->as_perm=0;
 	as->heap->next=NULL;
@@ -402,6 +402,7 @@ as_complete_load(struct addrspace *as)
 	revert_perm_temp(as, as->as_pbase2);
 	revert_perm_temp(as, as->as_stackpbase);
 */
+	as->pid=curthread->process_id;
 	(void)as;
 	return 0;
 }
@@ -504,12 +505,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
 						(const void *)PADDR_TO_KVADDR(temp1->paddr),
 						PAGE_SIZE);
-		/*memmove((void *)PADDR_TO_KVADDR(temp2->vaddr),
-								(const void *)PADDR_TO_KVADDR(temp1->vaddr),
-								PAGE_SIZE);
-		memmove((void *)PADDR_TO_KVADDR(temp2->perm),
-								(const void *)PADDR_TO_KVADDR(temp1->perm),
-								sizeof(int));*/
 		temp1=temp1->next;
 		temp2=temp2->next;
 	}

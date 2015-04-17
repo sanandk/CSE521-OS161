@@ -47,7 +47,7 @@
 #include <kern/wait.h>
 #include <copyinout.h>
 #include <cpu.h>
-
+#include <vm.h>
 
 /*
  * sys_getpid system call: get current process id
@@ -194,7 +194,7 @@ sys___fork(int *ret,struct trapframe * tf)
 int
 sys___execv(int *ret,const char *program, char **uargs)
 {
-	struct lock *lk=lock_create("execv");
+
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result,argc;
@@ -202,35 +202,46 @@ sys___execv(int *ret,const char *program, char **uargs)
 	size_t len;
 
 	*ret=-1;
-	lock_acquire(lk);
 	if(program==NULL || uargs == NULL)
 		return EFAULT;
-
+	lock_acquire(execv_lock);
 	pname=(char *)kmalloc(sizeof(char)*PATH_MAX);
 
 	result= copyinstr((const_userptr_t) program, pname, PATH_MAX, &len);
 
 	if (result)
+	{
+		lock_release(execv_lock);
 		return result;
+	}
 
 	if(len < 2 || len >PATH_MAX)
+	{
+		lock_release(execv_lock);
 		return EINVAL;
+	}
 
 	argv=(char **)kmalloc(sizeof(char**));
 	result= copyin((const_userptr_t) uargs, argv, sizeof(argv));
 
-	if (result)
+	if (result){
+		lock_release(execv_lock);
 		return result;
+	}
 
 	int i=0;
 
 	while(uargs[i]!=NULL){
 			argv[i] = (char *)kmalloc(sizeof(char)*PATH_MAX);
 			result = copyinstr((const_userptr_t) uargs[i],argv[i], PATH_MAX, &len);
-			if(len>ARG_MAX)
+			if(len>ARG_MAX){
+				lock_release(execv_lock);
 				return E2BIG;
-			if (result)
+			}
+			if (result){
+				lock_release(execv_lock);
 				return result;
+			}
 			i++;
 	}
 	argv[i]=NULL;
@@ -239,6 +250,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 	/* Open the file. */
 	result = vfs_open(pname, O_RDONLY, 0, &v);
 	if (result) {
+		lock_release(execv_lock);
 		return result;
 	}
 
@@ -251,6 +263,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 	curthread->t_addrspace = as_create();
 	if (curthread->t_addrspace==NULL) {
 		vfs_close(v);
+		lock_release(execv_lock);
 		return ENOMEM;
 	}
 
@@ -262,6 +275,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 	if (result) {
 		/* thread_exit destroys curthread->t_addrspace */
 		vfs_close(v);
+		lock_release(execv_lock);
 		return result;
 	}
 
@@ -271,7 +285,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 	/* Define the user stack in the address space */
 	result = as_define_stack(curthread->t_addrspace, &stackptr);
 	if (result) {
-
+		lock_release(execv_lock);
 		/* thread_exit destroys curthread->t_addrspace */
 		return result;
 	}
@@ -301,8 +315,10 @@ sys___execv(int *ret,const char *program, char **uargs)
 
 		int res=copyout((const void *)str,(userptr_t)stackptr,len);
 
-		if(res)
+		if(res){
+			lock_release(execv_lock);
 			return EFAULT;
+		}
 
 		argv[i]=(char *)stackptr;
 
@@ -317,10 +333,12 @@ sys___execv(int *ret,const char *program, char **uargs)
 	{
 		stackptr-=sizeof(char*);
 		int res=copyout((const void *)(argv+i),(userptr_t)stackptr,sizeof(char*));
-		if(res)
+		if(res){
+			lock_release(execv_lock);
 			return EFAULT;
+		}
 	}
-	lock_release(lk);
+	lock_release(execv_lock);
 	kprintf("=%d=%d=",i,argc);
 	/* Warp to user mode. */
 	enter_new_process(argc, (userptr_t)stackptr,
@@ -347,5 +365,109 @@ sys___exit(int code)
 
 	V(plist[i]->esem);
 	thread_exit();
+	return 0;
+}
+
+int
+sys___sbrk(int *ret, int amt)
+{
+	struct addrspace *heap=curthread->t_addrspace->heap;
+	struct PTE *temp=heap->pages;
+	vaddr_t heap_start, heap_end;
+	heap_start=temp->vaddr;
+	while(temp->next!=NULL){
+		temp=temp->next;
+	}
+	heap_end=temp->vaddr;
+	if(amt==0){
+		*ret=heap_end;
+		return 0;
+	}
+	if(amt%4!=0){
+		*ret=-1;
+		return EINVAL;
+	}
+	if((heap_end+amt)<heap_start)
+	{
+		*ret=-1;
+		return EINVAL;
+	}
+	if(amt<0){
+
+		amt*=-1; //remove negative sign
+		if(amt<PAGE_SIZE){
+			*ret=heap_end;
+			heap_end-=amt;
+			temp->vaddr-=amt;
+		}
+		else
+		{
+			size_t no=amt/PAGE_SIZE;
+			if((int)(heap->as_npages-no)<0)
+			{
+				*ret=-1;
+				return EINVAL;
+			}
+			heap->as_npages-=no;
+			for(int i=0;i<(int)no;i++)
+			{
+				temp=heap->pages;
+				while(temp->next->next!=NULL){
+					temp=temp->next;
+				}
+				free_page(temp->next->paddr);
+				kfree(temp->next);
+				temp->next=NULL;
+			}
+			*ret=heap_end;
+		}
+	}
+	else
+	{
+		if((heap_end+amt)>(USERSTACK-(12*PAGE_SIZE)))
+		{
+			*ret=-1;
+			return ENOMEM;
+		}
+		if(amt<PAGE_SIZE && (PAGE_SIZE- ((int)(heap_end-heap_start)%PAGE_SIZE)) > amt)
+		{
+			*ret=heap_end;
+			heap_end+=amt;
+			temp->vaddr+=amt;
+		}
+		else
+		{
+			amt-=PAGE_SIZE - ((heap_end-heap_start)%PAGE_SIZE);
+			int no=amt/PAGE_SIZE;
+			if(amt%PAGE_SIZE){
+				no++;
+			}
+			temp=heap->pages;
+			while(temp->next!=NULL){
+				temp=temp->next;
+			}
+			int tot=count_free();
+			kprintf("\nFREE:%d",tot);
+			if(tot<no){
+				*ret=-1;
+				return ENOMEM;
+			}
+			for(int i=0;i<no;i++)
+			{
+				struct PTE *pg=(struct PTE *)kmalloc(sizeof(struct PTE));
+				pg->next=NULL;
+				pg->perm=0;
+				pg->vaddr=temp->vaddr+PAGE_SIZE;
+				pg->paddr=alloc_page();
+				if(pg->paddr==0)
+					return ENOMEM;
+				temp->next=pg;
+
+				temp=temp->next;
+			}
+			heap->as_npages+=no;
+			*ret=heap_end;
+		}
+	}
 	return 0;
 }

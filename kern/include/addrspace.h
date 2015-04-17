@@ -55,6 +55,8 @@ struct addrspace{
 	struct PTE *pages;
 	struct addrspace *next;
 	struct addrspace *heap, *stack;
+
+	pid_t pid;
 };
 
 /* 

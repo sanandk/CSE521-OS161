@@ -77,6 +77,8 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize);
 int
 sys___write(int *ret, int fd, void *buf, size_t bufsize);
 int
+sys___sbrk(int *ret, int amt);
+int
 sys___close(int *ret, int fd);
 int
 sys___dup2(int *ret, int , int );

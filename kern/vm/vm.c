@@ -8,7 +8,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
-
+#include <clock.h>
 
 #define DUMBVM_STACKPAGES    12
 
@@ -61,10 +61,72 @@ vm_bootstrap(void)
 
 
 }
+/*
+static void flush_to_disk(struct addrspace *as){
+	struct vnode *v;
+	struct iovec iov;
+	struct uio ku;
+	struct coremap_page *core_map_file;
+	int err=vfs_open(kstrcat("swapfile",as->pid),O_RDWR|O_CREAT|O_TRUNC,0,&v);
+	if(err!=0)
+		kprintf("VFS_ERROR:%d!",err);
+
+	uio_kinit(&iov, &ku, core_map, last_index*sizeof(struct coremap_page), 0, UIO_WRITE);
+	int result = VOP_WRITE(v, &ku);
+	if (result) {
+		kprintf("VOP_WRITE ERROR:%d",result);
+	}
+
+	if (ku.uio_resid != 0) {
+		kprintf("VOP_WRITE_ERR: short read on phdr - file truncated?\n");
+	}
+}
+static void get_from_disk(pid_t pid){
+	struct vnode *v;
+	struct iovec iov;
+	struct uio ku;
+	struct coremap_page *core_map_file;
+	int err=vfs_open(kstrcat("swapfile",pid),O_RDWR|O_CREAT|O_TRUNC,0,&v);
+	if(err!=0)
+		kprintf("VFS_ERROR:%d!",err);
+
+	uio_kinit(&iov, &ku, &core_map_file, last_index*sizeof(struct coremap_page), 0, UIO_READ);
+
+	int result = VOP_READ(v, &ku);
+	if (result) {
+		kprintf("VOP_READ ERROR:%d",result);
+	}
+
+	if (ku.uio_resid != 0) {
+		kprintf("VOP_READ_ERR: short read on phdr - file truncated?\n");
+	}
+	for(int i=0;i<last_index;i++)
+	{
+		if(core_map_file[i].pstate==FREE)
+			kprintf("\n%x,%s",core_map_file[i].paddr,"FREE");
+		else
+			kprintf("\n%x,%s",core_map_file[i].paddr,"USED");
+	}
+}
+*/
+
+int count_free()
+{
+	int cnt=0;
+	for(int i=0;i<last_index;i++)
+		{
+			if(core_map[i].pstate==FREE)
+			{
+				cnt++;
+			}
+		}
+	return cnt;
+}
 
 /* Allocate/free some kernel-space virtual pages */
 vaddr_t alloc_page(void)
 {
+	//kprintf("\nPID:%d",curthread->process_id);
 	paddr_t pa;
 	spinlock_acquire(&stealmem_lock);
 	int found=-1;
@@ -74,6 +136,7 @@ vaddr_t alloc_page(void)
 		{
 			core_map[i].pstate=DIRTY;
 			core_map[i].npages=1;
+			gettime(&core_map[i].beforesecs, &core_map[i].beforensecs);
 			found=i;
 			break;
 		}
@@ -81,10 +144,43 @@ vaddr_t alloc_page(void)
 	spinlock_release(&stealmem_lock);
 
 	if (found==-1) {
+		int victim_ind;
+		time_t aftersecs, secs,h=-1;
+		uint32_t afternsecs, nsecs,nh=-1;
+		gettime(&aftersecs, &afternsecs);
+		// FLUSH!
+		for(int i=1;i<last_index;i++)
+		{
+			getinterval(core_map[i].beforesecs, core_map[i].beforensecs,
+					    aftersecs, afternsecs,
+					    &secs, &nsecs);
+			if(h<secs){
+				h=secs;
+				nh=nsecs;
+				victim_ind=i;
+			}
+			else if(h==secs){
+				if(nh<nsecs)
+				{
+					nh=nsecs;
+					victim_ind=i;
+				}
+			}
+		}
+		core_map[victim_ind].pstate=DIRTY;
+		core_map[victim_ind].npages=1;
+		gettime(&core_map[victim_ind].beforesecs, &core_map[victim_ind].beforensecs);
+
+		found=victim_ind;
+		//flush_to_disk(curthread->t_addrspace);
+		//kprintf("\nFLUSHED");
+		//get_from_disk(curthread->t_addrspace->pid);
+
 		return 0;
 	}
 	//pa= freeaddr + (found * PAGE_SIZE);
 	pa=core_map[found].paddr;
+	//kprintf("ALLOC:1 pages");
 	//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	return pa;
 }
@@ -146,6 +242,7 @@ alloc_kpages(int npages)
 	if (pa==0) {
 		return 0;
 	}
+	//kprintf("ALLOC:%d pages",npages);
 	return PADDR_TO_KVADDR(pa);
 }
 
@@ -161,6 +258,7 @@ free_page(paddr_t addr)
 			break;
 		}
 	}
+	//kprintf("DALLOC:1 pages");
 	spinlock_release(&stealmem_lock);
 }
 
@@ -176,6 +274,7 @@ free_kpages(vaddr_t addr)
 			{
 				core_map[j].pstate=FREE;
 			}
+		//	kprintf("DEALLOC:%d pages",core_map[i].npages);
 			break;
 		}
 	}

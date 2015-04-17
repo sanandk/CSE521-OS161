@@ -57,7 +57,9 @@ struct coremap_page {
     int npages; //single/multi page allocation
 
     /* other info for paging algorithm  */
-
+	time_t beforesecs;
+	uint32_t beforensecs;
+	pid_t pid;
 };
 
 /* Initialization function */
@@ -66,6 +68,7 @@ void vm_bootstrap(void);
 /* Fault handling function called by trap code */
 int vm_fault(int faulttype, vaddr_t faultaddress);
 vaddr_t alloc_page(void);
+int count_free(void);
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(int npages);
 

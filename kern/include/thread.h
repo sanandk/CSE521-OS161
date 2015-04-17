@@ -39,7 +39,7 @@
 #include <limits.h>
 #include <spinlock.h>
 #include <threadlist.h>
-
+struct lock *execv_lock;
 struct addrspace;
 struct cpu;
 struct vnode;

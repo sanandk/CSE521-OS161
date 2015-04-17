@@ -389,6 +389,7 @@ thread_bootstrap(void)
 	 * how things are defined.
 	 */
 	curthread->t_cpu = curcpu;
+	execv_lock=lock_create("execv");
 	curcpu->c_curthread = curthread;
 
 	/* Done */

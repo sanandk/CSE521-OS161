@@ -530,12 +530,14 @@ test567(int testno, unsigned long seed)
 		ptrs[i] = NULL;
 		psizes[i] = 0;
 	}
-
+	printf("\nfor1");
 	for (i=0; i<100000; i++) {
 		n = random()%32;
+		printf("\n%d,%d",i,n);
 		if (ptrs[n] == NULL) {
 			size = sizes[random()%8];
 			ptrs[n] = malloc(size);
+			printf("\nMALLOC RETURNED!\n");
 			psizes[n] = size;
 			if (ptrs[n] == NULL) {
 				printf("\nmalloc %u failed\n", size);
@@ -558,6 +560,7 @@ test567(int testno, unsigned long seed)
 			printf(".");
 		}
 	}
+	printf("\nfor2");
 	printf("\n");
 
 	for (i=0; i<32; i++) {
@@ -565,7 +568,7 @@ test567(int testno, unsigned long seed)
 			free(ptrs[i]);
 		}
 	}
-
+	printf("\nfreed");
 	if (failed) {
 		printf("FAILED malloc test %d\n", testno);
 	}

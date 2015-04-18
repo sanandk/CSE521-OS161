@@ -460,12 +460,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	new->heap->as_vbase=old->heap->as_vbase;
 	new->heap->as_perm=old->heap->as_perm;
 	new->heap->next=NULL;
-	new->heap->pages=(struct PTE *)kmalloc(sizeof(struct PTE));
+	new->heap->pages=NULL;
+	/*new->heap->pages=(struct PTE *)kmalloc(sizeof(struct PTE));
 	new->heap->pages->next=NULL;
 	new->heap->pages->perm=old->heap->pages->perm;
 	new->heap->pages->vaddr=old->heap->pages->vaddr;
 	new->heap->pages->paddr=old->heap->pages->paddr;
-
+*/
 	new->stack = (struct addrspace*) kmalloc(sizeof(struct addrspace));
 	new->stack->as_npages=old->stack->as_npages;
 	new->stack->as_vbase=old->stack->as_vbase;
@@ -480,34 +481,46 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
-	struct PTE *temp1=old->pages,*temp2=new->pages;
-
-	while(temp1!=NULL)
+	struct PTE *temp1,*temp2;
+	otemp=old;
+	ntemp=new;
+	while(otemp!=NULL)
 	{
-		memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
-						(const void *)PADDR_TO_KVADDR(temp1->paddr),
-						PAGE_SIZE);
-		/*memmove((void *)PADDR_TO_KVADDR(temp2->vaddr),
-								(const void *)PADDR_TO_KVADDR(temp1->vaddr),
-								PAGE_SIZE);
-		memmove((void *)PADDR_TO_KVADDR(temp2->perm),
-								(const void *)PADDR_TO_KVADDR(temp1->perm),
-								sizeof(int));*/
-		temp1=temp1->next;
-		temp2=temp2->next;
+		temp1=otemp->pages;
+		temp2=ntemp->pages;
+		while(temp1!=NULL)
+		{
+			memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
+							(const void *)PADDR_TO_KVADDR(temp1->paddr),
+							PAGE_SIZE);
+			temp1=temp1->next;
+			temp2=temp2->next;
+		}
+		otemp=otemp->next;
+		ntemp=ntemp->next;
 	}
-
 	temp1=old->stack->pages;
-	temp2=new->stack->pages;
+		temp2=new->stack->pages;
 
-	while(temp1!=NULL)
-	{
-		memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
-						(const void *)PADDR_TO_KVADDR(temp1->paddr),
-						PAGE_SIZE);
-		temp1=temp1->next;
-		temp2=temp2->next;
-	}
+		while(temp1!=NULL)
+		{
+			memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
+							(const void *)PADDR_TO_KVADDR(temp1->paddr),
+							PAGE_SIZE);
+			temp1=temp1->next;
+			temp2=temp2->next;
+		}
+	temp1=old->heap->pages;
+		temp2=new->heap->pages;
+
+		while(temp1!=NULL)
+		{
+			memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
+							(const void *)PADDR_TO_KVADDR(temp1->paddr),
+							PAGE_SIZE);
+			temp1=temp1->next;
+			temp2=temp2->next;
+		}
 	*ret = new;
 	return 0;
 }

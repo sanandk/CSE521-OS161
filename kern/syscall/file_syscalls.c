@@ -44,6 +44,7 @@
 #include <current.h>
 #include <kern/wait.h>
 #include <copyinout.h>
+#include <addrspace.h>
 
 /*
  * sys_getpid system call: get current process id
@@ -87,23 +88,23 @@ sys___open(int *ret, char *filename, int flags, mode_t mode)
 	char *fname;
 	size_t len;
 
-	/*if(filename==NULL)
+	if(filename==NULL || filename==(void *)0x40000000)
 	{
 			*ret=-1;
 			return EFAULT;
-	}*/
+	}
 	if(flags>66)
 	{
 		*ret=-1;
 		return EINVAL;
 	}
 	//fname=filename;
-	/*result = copycheck2((const_userptr_t) filename, PATH_MAX, &len);
+	result = copycheck2((const_userptr_t) filename, PATH_MAX, &len);
 	if (result) {
 		kprintf("|copycheck2 failed|");
 		*ret=-1;
 		return result;
-	}*/
+	}
 	fname=kmalloc(sizeof(char)*PATH_MAX);
 	result= copyinstr((const_userptr_t) filename, fname, PATH_MAX, &len);
 
@@ -158,18 +159,20 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize)
 		*ret=-1;
 		return EBADF;
 	}
-	void *kbuf=kmalloc(sizeof(*buf)*bufsize);
+
 	int result;
-	if(kbuf==NULL)
-	{
-		*ret=-1;
-		return EFAULT;
-	}
+
 	size_t len;
 	result = copycheck2((const_userptr_t) buf, bufsize, &len);
 		if (result) {
-			return result;
+			*ret=-1;
+			return EFAULT;
 		}
+		if(buf==NULL  || buf==(void *)0x40000000)
+			{
+				*ret=-1;
+				return EFAULT;
+			}
 
 	if(fd>curthread->fd_count+2 || curthread->f_handles[fd]==NULL)
 	{
@@ -201,12 +204,14 @@ sys___read(int *ret, int fd, void *buf, size_t bufsize)
 	u.uio_space = curthread->t_addrspace;
 
 	result = VOP_READ(v, &u);
+
 	if (result) {
 		lock_release(file->file_lock);
 		*ret=-1;
-		return result;
+		return EFAULT;
 	}
-
+	/*copyout((const void *)kbuf, (userptr_t)buf, bufsize);
+	kfree(kbuf);*/
 	file->file_offset=u.uio_offset;
 	*ret=bufsize-u.uio_resid;
 	lock_release(file->file_lock);
@@ -227,20 +232,18 @@ sys___write(int *ret, int fd, void *buf, size_t bufsize)
 			*ret=-1;
 			return EBADF;
 	}
-
-	void *kbuf=kmalloc(sizeof(*buf)*bufsize);
-	if(kbuf==NULL)
-	{
-		*ret=-1;
-		return EINVAL;
-	}
 	int result;
-	size_t len;
-	result = copycheck2((const_userptr_t) buf, bufsize, &len);
-	if (result) {
-		return result;
-	}
-
+		size_t len;
+		result = copycheck2((const_userptr_t) buf, bufsize, &len);
+		if (result) {
+			*ret=-1;
+			return EFAULT;
+		}
+		if(buf==NULL  || buf==(void *)0x40000000)
+			{
+				*ret=-1;
+				return EFAULT;
+			}
 
 	struct file_handle *file=curthread->f_handles[fd];
 	struct vnode *v=file->file_ref;
@@ -254,8 +257,14 @@ sys___write(int *ret, int fd, void *buf, size_t bufsize)
 	}
 
 	lock_acquire(file->file_lock);
-
-	iov.iov_ubase = (userptr_t)buf;
+	/*result=copyinstr((userptr_t)buf,kbuf,bufsize,&len);
+	if(result){
+		*ret=-1;
+		lock_release(file->file_lock);
+		return EFAULT;
+	}*/
+	uio_kinit(&iov,&u,(void *)buf,bufsize,file->file_offset,UIO_WRITE);
+	/*iov.iov_ubase = (void *)buf;
 	iov.iov_len = bufsize;		 // length of the memory space
 	u.uio_iov = &iov;
 	u.uio_iovcnt = 1;
@@ -264,16 +273,16 @@ sys___write(int *ret, int fd, void *buf, size_t bufsize)
 	u.uio_segflg = UIO_USERSPACE;
 	u.uio_rw = UIO_WRITE;
 	u.uio_space = curthread->t_addrspace;
-
+*/
 	result = VOP_WRITE(v, &u);
-	if (result) {
+	if (result!=0) {
 		lock_release(file->file_lock);
 		*ret=-1;
 		return result;
 	}
-
 	file->file_offset=u.uio_offset;
 	*ret=bufsize-u.uio_resid;
+
 	lock_release(file->file_lock);
 
 	return 0;
@@ -358,7 +367,7 @@ sys___chdir(int *ret, char *dirname)
 {
 	char *dname;
 
-	if(dirname==NULL)
+	if(dirname==NULL || dirname==(void *)0x40000000)
 	{
 		*ret=-1;
 		return EFAULT;
@@ -377,11 +386,13 @@ sys___chdir(int *ret, char *dirname)
 		*ret=-1;
 		return EFAULT;
 	}
-	result = vfs_chdir(dirname);
+	result = vfs_chdir(dname);
 		if (result) {
+			kfree(dname);
 			*ret=result;
 			return -1;
 		}
+		kfree(dname);
 		*ret=0;
 		return 0;
 }
@@ -391,7 +402,7 @@ sys___getcwd(int *ret, char *buf, size_t buflen)
 	struct iovec iov;
 	struct uio ku;
 
-	if(buf==NULL)
+	if(buf==NULL || buf==(void *)0x40000000)
 	{
 			*ret=-1;
 			return EFAULT;
@@ -490,10 +501,10 @@ sys___lseek(int *ret,int *ret2, int fd, off_t offset, int whence)
 	}
 	curthread->f_handles[fd]->file_offset=new_pos;
 
-	lock_release(curthread->f_handles[fd]->file_lock);
-
 	*ret=(new_pos & 0xFFFFFFFF00000000) >> 32;
 	*ret2=new_pos & 0xFFFFFFFF;
+
+	lock_release(curthread->f_handles[fd]->file_lock);
 
 	return 0;
 }

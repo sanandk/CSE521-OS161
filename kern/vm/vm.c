@@ -13,6 +13,7 @@
 #define DUMBVM_STACKPAGES    12
 
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+static struct spinlock tlb_lock = SPINLOCK_INITIALIZER;
 static struct lock *coremap_lock;
 static int vm_bootstrapped=0;
 static paddr_t freeaddr;
@@ -415,7 +416,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 	if(paddr==0)
 	{
-		return EFAULT;
+		paddr=alloc_page();
+		//return EFAULT;
 	}
 	/*int ind=getfirst10(faultaddress);
 	if(as->pgdir[ind].pg_table==NULL){
@@ -447,7 +449,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
-
+	spinlock_acquire(&tlb_lock);
 	for (i=0; i<NUM_TLB; i++) {
 		tlb_read(&ehi, &elo, i);
 		if (elo & TLBLO_VALID) {
@@ -457,11 +459,15 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
 		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 		tlb_write(ehi, elo, i);
+		spinlock_release(&tlb_lock);
 		splx(spl);
 		return 0;
 	}
-
-	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
+	ehi = faultaddress;
+	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	tlb_random(ehi,elo);
+	//kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
+	spinlock_release(&tlb_lock);
 	splx(spl);
-	return EFAULT;
+	return 0;
 }

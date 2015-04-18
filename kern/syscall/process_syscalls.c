@@ -80,6 +80,9 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 			hisparent=plist[i]->ppid;
 	}
 
+	if(status==(void *)0x40000000)
+		return EFAULT;
+
 	if(pid<PID_MIN || pid>PID_MAX)
 		return ESRCH;
 	if(status==NULL)
@@ -205,9 +208,19 @@ sys___execv(int *ret,const char *program, char **uargs)
 	if(program==NULL || uargs == NULL)
 		return EFAULT;
 	lock_acquire(execv_lock);
+
 	pname=(char *)kmalloc(sizeof(char)*PATH_MAX);
 
 	result= copyinstr((const_userptr_t) program, pname, PATH_MAX, &len);
+	if((void *) program== (void *)0x40000000 || (void *) uargs== (void *)0x40000000){
+		lock_release(execv_lock);
+		return EFAULT;
+	}
+
+	if((char *)program=='\0' || (char *)program==NULL){
+		lock_release(execv_lock);
+		return EINVAL;
+	}
 
 	if (result)
 	{
@@ -226,12 +239,24 @@ sys___execv(int *ret,const char *program, char **uargs)
 
 	if (result){
 		lock_release(execv_lock);
-		return result;
+		return EFAULT;
 	}
 
 	int i=0;
-
+	/*result=copycheck2((const_userptr_t) uargs, sizeof(uargs), &len);
+		if(result){
+			lock_release(execv_lock);
+			return EFAULT;
+		}
+	if(*uargs=='\0'){
+				lock_release(execv_lock);
+				return EINVAL;
+			}*/
 	while(uargs[i]!=NULL){
+		  	  /*if((void *) uargs[i]== (void *)0x40000000){
+		  		  lock_release(execv_lock);
+		  		  return EFAULT;
+		  	  }*/
 			argv[i] = (char *)kmalloc(sizeof(char)*PATH_MAX);
 			result = copyinstr((const_userptr_t) uargs[i],argv[i], PATH_MAX, &len);
 			if(len>ARG_MAX){
@@ -240,7 +265,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 			}
 			if (result){
 				lock_release(execv_lock);
-				return result;
+				return EFAULT;
 			}
 			i++;
 	}
@@ -251,7 +276,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 	result = vfs_open(pname, O_RDONLY, 0, &v);
 	if (result) {
 		lock_release(execv_lock);
-		return result;
+		return EFAULT;
 	}
 
 	if(curthread->t_addrspace !=NULL){
@@ -392,8 +417,8 @@ sys___sbrk(int *ret, int amt)
 		*ret=-1;
 		return EINVAL;
 	}
+	KASSERT((heap_end+amt)>=heap_start);
 	if(amt<0){
-
 		amt*=-1; //remove negative sign
 		if(amt<PAGE_SIZE){
 			*ret=heap_end;
@@ -403,22 +428,25 @@ sys___sbrk(int *ret, int amt)
 		else
 		{
 			size_t no=amt/PAGE_SIZE;
-			if((int)(heap->as_npages-no)<0)
+			/*if((int)(heap->as_npages-no)<0)
 			{
 				*ret=-1;
 				return EINVAL;
-			}
-			heap->as_npages-=no;
+			}*/
 			for(int i=0;i<(int)no;i++)
 			{
 				temp=heap->pages;
-				while(temp->next->next!=NULL){
-					temp=temp->next;
+				if(temp->next!=NULL)
+				{
+					while(temp->next->next!=NULL){
+						temp=temp->next;
+					}
+					free_page(temp->next->paddr);
+					kfree(temp->next);
+					temp->next=NULL;
 				}
-				free_page(temp->next->paddr);
-				kfree(temp->next);
-				temp->next=NULL;
 			}
+			heap->as_npages-=no;
 			*ret=heap_end;
 		}
 	}
@@ -429,7 +457,7 @@ sys___sbrk(int *ret, int amt)
 			*ret=-1;
 			return ENOMEM;
 		}
-		if(amt<PAGE_SIZE && (PAGE_SIZE- ((int)(heap_end-heap_start)%PAGE_SIZE)) > amt)
+		if(amt<PAGE_SIZE)// && (PAGE_SIZE- ((int)(heap_end-heap_start)%PAGE_SIZE)) > amt)
 		{
 			*ret=heap_end;
 			heap_end+=amt;
@@ -437,7 +465,7 @@ sys___sbrk(int *ret, int amt)
 		}
 		else
 		{
-			amt-=PAGE_SIZE - ((heap_end-heap_start)%PAGE_SIZE);
+			//amt-=PAGE_SIZE - ((heap_end-heap_start)%PAGE_SIZE);
 			int no=amt/PAGE_SIZE;
 			if(amt%PAGE_SIZE){
 				no++;

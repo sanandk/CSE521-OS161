@@ -46,6 +46,7 @@
 enum page_state_t {FREE, DIRTY, CLEAN, FIXED};
 int free_index, last_index;
 struct coremap_page *core_map;
+struct bitmap *swap_map;
 struct coremap_page {
     /* where is paged mapped to */
     struct addrspace *aspace;
@@ -77,7 +78,7 @@ void free_page(vaddr_t addr);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);
-void vm_tlbshootdown(const struct tlbshootdown *);
+void vm_tlbshootdown(vaddr_t va);
 
 
 #endif /* _VM_H_ */

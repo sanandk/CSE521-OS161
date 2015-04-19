@@ -1295,7 +1295,8 @@ interprocessor_interrupt(void)
 		}
 		else {
 			for (i=0; i<curcpu->c_numshootdown; i++) {
-				vm_tlbshootdown(&curcpu->c_shootdown[i]);
+				//vm_tlbshootdown(&curcpu->c_shootdown[i].ts_vaddr);
+				panic("shootdown");
 			}
 		}
 		curcpu->c_numshootdown = 0;

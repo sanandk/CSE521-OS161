@@ -410,6 +410,7 @@ sys___sbrk(int *ret, int amt)
 	}
 	if(amt%4!=0){
 		*ret=-1;
+		kprintf("\namt not 4\n");
 		return EINVAL;
 	}
 	if((heap_end+amt)<heap_start)

@@ -31,7 +31,7 @@
 #include <kern/errno.h>
 #include <lib.h>
 #include <addrspace.h>
-
+#include <bitmap.h>
 
 #include <spl.h>
 #include <spinlock.h>
@@ -122,18 +122,18 @@ as_destroy(struct addrspace *as)
 void
 as_activate(struct addrspace *as)
 {
-	int i,spl;
+
 
 	(void)as;
-
-	/* Disable interrupts on this CPU while frobbing the TLB. */
-	spl = splhigh();
+	/*	int i,spl;
+	 Disable interrupts on this CPU while frobbing the TLB. */
+	/*spl = splhigh();
 
 	for (i=0; i<64; i++) {
 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
 	}
 
-	splx(spl);
+	splx(spl);*/
 }
 /*
 static vaddr_t getfirst10(vaddr_t addr){
@@ -302,7 +302,7 @@ as_prepare_load(struct addrspace *as)
 	KASSERT(as->as_stackpbase == 0);*/
 	paddr_t pa;
 	int i;
-	vaddr_t va;
+	vaddr_t va,sa;
 	struct addrspace *temp=as;
 	struct PTE *ptemp,*pg;
 	while(temp!=NULL)
@@ -315,6 +315,9 @@ as_prepare_load(struct addrspace *as)
 				temp->pages->next=NULL;
 				temp->pages->perm=temp->as_perm;
 				temp->pages->vaddr=va;
+				bitmap_alloc(swap_map, &sa);
+				temp->pages->saddr=sa*PAGE_SIZE;
+				temp->pages->swapped=0;
 				pa=alloc_page();
 				if(pa==0)
 					return ENOMEM;
@@ -328,6 +331,9 @@ as_prepare_load(struct addrspace *as)
 				pg->next=NULL;
 				pg->perm=as->as_perm;
 				pg->vaddr=va;
+				bitmap_alloc(swap_map, &sa);
+				pg->saddr=sa*PAGE_SIZE;
+				pg->swapped=0;
 				pa=alloc_page();
 				if(pa==0)
 					return ENOMEM;
@@ -348,6 +354,9 @@ as_prepare_load(struct addrspace *as)
 	as->heap->pages->next=NULL;
 	as->heap->pages->perm=0;
 	as->heap->pages->vaddr=va;
+	bitmap_alloc(swap_map, &sa);
+	as->heap->pages->saddr=sa*PAGE_SIZE;
+	as->heap->pages->swapped=0;
 	pa=alloc_page();
 	if(pa==0)
 		return ENOMEM;
@@ -369,6 +378,9 @@ as_prepare_load(struct addrspace *as)
 			as->stack->pages->next=NULL;
 			as->stack->pages->perm=0;
 			as->stack->pages->vaddr=s_va;
+			bitmap_alloc(swap_map, &sa);
+			as->stack->pages->saddr=sa*PAGE_SIZE;
+			as->stack->pages->swapped=0;
 			pa=alloc_page();
 			if(pa==0)
 				return ENOMEM;
@@ -383,6 +395,9 @@ as_prepare_load(struct addrspace *as)
 			pg->next=NULL;
 			pg->perm=0;
 			pg->vaddr=s_va;
+			bitmap_alloc(swap_map, &sa);
+			pg->saddr=sa*PAGE_SIZE;
+			pg->swapped=0;
 			pa=alloc_page();
 			if(pa==0)
 				return ENOMEM;
@@ -402,7 +417,6 @@ as_complete_load(struct addrspace *as)
 	revert_perm_temp(as, as->as_pbase2);
 	revert_perm_temp(as, as->as_stackpbase);
 */
-	as->pid=curthread->process_id;
 	(void)as;
 	return 0;
 }

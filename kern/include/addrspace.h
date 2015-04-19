@@ -43,6 +43,8 @@ struct vnode;
 struct PTE{
    vaddr_t vaddr;
    paddr_t paddr;
+   vaddr_t saddr;
+   int swapped;
    int perm;
    struct PTE *next;
 };
@@ -56,7 +58,6 @@ struct addrspace{
 	struct addrspace *next;
 	struct addrspace *heap, *stack;
 
-	pid_t pid;
 };
 
 /* 

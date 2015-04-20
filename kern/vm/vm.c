@@ -359,7 +359,7 @@ vaddr_t alloc_page(void)
 	//pa= freeaddr + (found * PAGE_SIZE);
 	pa=core_map[found].paddr;
 	//kprintf("ALLOC:1 pages");
-	bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+//	bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	return pa;
 }
 

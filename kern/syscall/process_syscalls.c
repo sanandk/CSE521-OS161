@@ -491,6 +491,7 @@ sys___sbrk(int *ret, int amt)
 				pg->perm=0;
 				pg->vaddr=temp->vaddr+PAGE_SIZE;
 				pg->paddr=alloc_page();
+				bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
 				if(pg->paddr==0)
 					return ENOMEM;
 				temp->next=pg;

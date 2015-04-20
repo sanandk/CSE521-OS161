@@ -51,6 +51,8 @@ static void getswapstats(){
 	size_t total_swap=st.st_size/PAGE_SIZE;
 	kprintf("\nSWAP MEM: %lu bytes, %d pages\n",(unsigned long)st.st_size,total_swap);
 	swap_map=bitmap_create(total_swap);
+	if(swap_map==NULL)
+		panic("SMAP IS NULL");
 }
 void
 vm_bootstrap(void)
@@ -116,14 +118,14 @@ static void access_swap(paddr_t pa, vaddr_t sa, enum uio_rw mode){
 	//kprintf("\nDONE TO DISK!");
 }
 static void swapin(paddr_t pa, vaddr_t sa){
-	kprintf("\nswapin");
+	//kprintf("\nswapin");
 	lock_acquire(coremap_lock);
 	access_swap(pa, sa, UIO_READ);
 	lock_release(coremap_lock);
 }
 static void swapout(paddr_t pa, vaddr_t sa){
 	lock_acquire(coremap_lock);
-	kprintf("\nswapout");
+	//kprintf("\nswapout");
 	access_swap(pa, sa, UIO_WRITE);
 	lock_release(coremap_lock);
 }
@@ -181,9 +183,11 @@ static struct PTE *choose_victim()
 	struct addrspace* as=curthread->parent->t_addrspace;
 	struct PTE *pages, *victim_pg=NULL;
 	gettime(&aftersecs, &afternsecs);
+
 	if(as==NULL)
 		as=curthread->t_addrspace;
-	if(5>6)
+
+	if(as->heap!=NULL)
 	{
 	pages=as->heap->pages;
 		while(pages!=NULL)
@@ -193,6 +197,7 @@ static struct PTE *choose_victim()
 								aftersecs, afternsecs,
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
+			kprintf("\nH:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
 			if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
 			{
 				nh=nsecs;
@@ -209,6 +214,7 @@ static struct PTE *choose_victim()
 									aftersecs, afternsecs,
 									&secs, &nsecs);
 				nsecs=( secs*1000 ) + (nsecs/1000);
+				kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
 				if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
 				{
 					nh=nsecs;
@@ -272,7 +278,7 @@ static int make_page_available(int npages){
 	struct PTE *victim_pg=choose_victim();
 	vaddr_t sa=victim_pg->saddr;
 	int vind=get_ind_coremap(victim_pg->paddr);
-	kprintf("VIND=%d",vind);
+	//kprintf("VIND=%d",vind);
 	/*if(last_index-vind<npages)
 		vind-=last_index-vind;
 */
@@ -287,6 +293,10 @@ static int make_page_available(int npages){
 		core_map[i].beforensecs=beforensecs;
 		swapout(core_map[i].paddr, sa);
 		vm_tlbshootdown(victim_pg->vaddr);
+	}
+	if(core_map[vind].vaddr<=USERSPACETOP){
+		kprintf("%x,%x",core_map[vind].vaddr,USERSPACETOP);
+		panic("POCHE");
 	}
 	return core_map[vind].paddr;
 }
@@ -320,16 +330,15 @@ vaddr_t alloc_page(void)
 			break;
 		}
 	}
+	spinlock_release(&stealmem_lock);
 	if (found==-1) {
 				return make_page_available(1);
 		}
-	spinlock_release(&stealmem_lock);
-
 
 	//pa= freeaddr + (found * PAGE_SIZE);
 	pa=core_map[found].paddr;
 	//kprintf("ALLOC:1 pages");
-	//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+	bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	return pa;
 }
 
@@ -371,6 +380,7 @@ alloc_kpages(int npages)
 					core_map[j].pstate=DIRTY;
 					core_map[j].npages=npages;
 					gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
+					bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
 					}
 					found=i;
 					break;
@@ -602,6 +612,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		if(page->swapped==1)
 		{
 			swapin(paddr,page->saddr);
+			page->swapped=0;
 		}
 	}
 	/*int ind=getfirst10(faultaddress);

@@ -125,15 +125,15 @@ as_activate(struct addrspace *as)
 
 
 	(void)as;
-	/*	int i,spl;
-	 Disable interrupts on this CPU while frobbing the TLB. */
-	/*spl = splhigh();
+		int i,spl;
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
 
 	for (i=0; i<64; i++) {
 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
 	}
 
-	splx(spl);*/
+	splx(spl);
 }
 /*
 static vaddr_t getfirst10(vaddr_t addr){
@@ -481,8 +481,8 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	new->heap->pages->next=NULL;
 	new->heap->pages->perm=old->heap->pages->perm;
 	new->heap->pages->vaddr=old->heap->pages->vaddr;
-	new->heap->pages->paddr=old->heap->pages->paddr;
-*/
+	new->heap->pages->paddr=alloc_page();*/
+
 	new->stack = (struct addrspace*) kmalloc(sizeof(struct addrspace));
 	new->stack->as_npages=old->stack->as_npages;
 	new->stack->as_vbase=old->stack->as_vbase;
@@ -516,7 +516,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		ntemp=ntemp->next;
 	}
 	temp1=old->stack->pages;
-		temp2=new->stack->pages;
+	temp2=new->stack->pages;
 
 		while(temp1!=NULL)
 		{
@@ -527,7 +527,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			temp2=temp2->next;
 		}
 	temp1=old->heap->pages;
-		temp2=new->heap->pages;
+	temp2=new->heap->pages;
 
 		while(temp1!=NULL)
 		{

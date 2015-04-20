@@ -430,11 +430,11 @@ sys___sbrk(int *ret, int amt)
 		else
 		{
 			size_t no=amt/PAGE_SIZE;
-		/*	if((int)(heap->as_npages-no)<0)
+			if((int)(heap->as_npages-no)<0)
 			{
 				*ret=-1;
 				return EINVAL;
-			}*/
+			}
 			for(int i=0;i<(int)no;i++)
 			{
 				temp=heap->pages;
@@ -479,11 +479,11 @@ sys___sbrk(int *ret, int amt)
 			}
 			/*
 			int tot=count_free();
-			kprintf("\nFREE:%d",tot);
-			if(tot<no){
+			kprintf("\nFREE:%d",tot);*/
+			if(last_index<no){
 				*ret=-1;
 				return ENOMEM;
-			}*/
+			}
 			for(int i=0;i<no;i++)
 			{
 				struct PTE *pg=(struct PTE *)kmalloc(sizeof(struct PTE));

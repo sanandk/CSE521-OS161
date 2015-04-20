@@ -170,6 +170,7 @@ sys___fork(int *ret,struct trapframe * tf)
 	int result=as_copy(curthread->t_addrspace,&child_addrspace);
 	if(result)
 	{
+
 		return ENOMEM;
 	}
 
@@ -197,7 +198,6 @@ sys___fork(int *ret,struct trapframe * tf)
 int
 sys___execv(int *ret,const char *program, char **uargs)
 {
-
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result,argc;

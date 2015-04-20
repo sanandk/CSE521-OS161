@@ -50,7 +50,7 @@ static void getswapstats(){
 	VOP_STAT(swap_vnode, &st);
 	size_t total_swap=st.st_size/PAGE_SIZE;
 	kprintf("\nSWAP MEM: %lu bytes, %d pages\n",(unsigned long)st.st_size,total_swap);
-	swap_map=bitmap_create(total_swap);
+	swap_map=bitmap_create(last_index*2);
 	if(swap_map==NULL)
 		panic("SMAP IS NULL");
 }
@@ -206,22 +206,42 @@ static struct PTE *choose_victim()
 			pages=pages->next;
 		}
 	}
-		pages=as->stack->pages;
-			while(pages!=NULL)
+	pages=as->stack->pages;
+		while(pages!=NULL)
+		{
+			i=get_ind_coremap(pages->paddr);
+			getinterval(core_map[i].beforesecs, core_map[i].beforensecs,
+								aftersecs, afternsecs,
+								&secs, &nsecs);
+			nsecs=( secs*1000 ) + (nsecs/1000);
+			kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
+			if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
 			{
-				i=get_ind_coremap(pages->paddr);
-				getinterval(core_map[i].beforesecs, core_map[i].beforensecs,
-									aftersecs, afternsecs,
-									&secs, &nsecs);
-				nsecs=( secs*1000 ) + (nsecs/1000);
-				kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-				if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
-				{
-					nh=nsecs;
-					victim_pg=pages;
-				}
-				pages=pages->next;
+				nh=nsecs;
+				victim_pg=pages;
 			}
+			pages=pages->next;
+		}/*
+		while(as!=NULL)
+		{
+		pages=as->pages;
+					while(pages!=NULL)
+					{
+						i=get_ind_coremap(pages->paddr);
+						getinterval(core_map[i].beforesecs, core_map[i].beforensecs,
+											aftersecs, afternsecs,
+											&secs, &nsecs);
+						nsecs=( secs*1000 ) + (nsecs/1000);
+						kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
+						if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
+						{
+							nh=nsecs;
+							victim_pg=pages;
+						}
+						pages=pages->next;
+					}
+			as=as->next;
+		}*/
 	KASSERT(victim_pg!=NULL);
 	return victim_pg;
 }

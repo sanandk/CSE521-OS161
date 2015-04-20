@@ -197,7 +197,7 @@ static struct PTE *choose_victim()
 								aftersecs, afternsecs,
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
-			kprintf("\nH:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
+			//kprintf("\nH:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
 			if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
 			{
 				nh=nsecs;
@@ -214,7 +214,7 @@ static struct PTE *choose_victim()
 								aftersecs, afternsecs,
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
-			kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
+			//kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
 			if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
 			{
 				nh=nsecs;
@@ -300,8 +300,8 @@ static int make_page_available(int npages){
 	int vind=get_ind_coremap(victim_pg->paddr);
 	//kprintf("VIND=%d",vind);
 	/*if(last_index-vind<npages)
-		vind-=last_index-vind;
-*/
+		vind-=last_index-vind;*/
+
 	for(int i=vind;i<vind+npages;i++)
 	{
 		core_map[i].pstate=DIRTY;
@@ -318,6 +318,7 @@ static int make_page_available(int npages){
 		kprintf("%x,%x",core_map[vind].vaddr,USERSPACETOP);
 		panic("POCHE");
 	}
+	//bzero((void *)PADDR_TO_KVADDR(core_map[vind].paddr), PAGE_SIZE);
 	return core_map[vind].paddr;
 }
 	/*
@@ -414,8 +415,8 @@ alloc_kpages(int npages)
 		spinlock_release(&stealmem_lock);
 
 		if (found==-1) {
-			if(npages>1)
-				panic("AYAYAOO");
+			/*if(npages>1)
+				panic("AYAYAOO");*/
 			return make_page_available(npages);
 		}
 		pa= core_map[start].paddr;

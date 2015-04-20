@@ -407,24 +407,24 @@ sys___getcwd(int *ret, char *buf, size_t buflen)
 			*ret=-1;
 			return EFAULT;
 	}
-	void *kbuf=kmalloc(sizeof(*buf)*buflen);
+	/*void *kbuf=kmalloc(sizeof(*buf)*buflen);
 	if(kbuf==NULL)
 	{
 		*ret=-1;
 		return EFAULT;
-	}
+	}*/
 	size_t len;
 	int result = copycheck2((const_userptr_t) buf, buflen, &len);
 	if (result) {
 		return result;
 	}
 
-		result= copyinstr((const_userptr_t) buf, kbuf, buflen, &len);
+		/*result= copyinstr((const_userptr_t) buf, kbuf, buflen, &len);
 		if (result)
 		{
 			*ret=-1;
 			return result;
-		}
+		}*/
 
 
 	uio_kinit(&iov, &ku, buf, buflen, 0, UIO_READ);
@@ -435,7 +435,7 @@ sys___getcwd(int *ret, char *buf, size_t buflen)
 	}
 
 	/* null terminate */
-	buf[sizeof(buf)-1-ku.uio_resid] = 0;
+	//buf[sizeof(buf)-1-ku.uio_resid] = 0;
 	*ret=strlen(buf);
 	return 0;
 }

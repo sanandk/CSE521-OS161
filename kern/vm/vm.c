@@ -400,7 +400,7 @@ alloc_kpages(int npages)
 					core_map[j].pstate=DIRTY;
 					core_map[j].npages=npages;
 					gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
-					bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
+		//			bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
 					}
 					found=i;
 					break;

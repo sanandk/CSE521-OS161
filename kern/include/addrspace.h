@@ -50,7 +50,7 @@ struct PTE{
 };
 
 struct addrspace{
-    vaddr_t as_vbase;
+    vaddr_t as_vbase, heap_end, heap_start;
 	paddr_t as_pbase;
 	size_t as_npages;
 	int as_perm;

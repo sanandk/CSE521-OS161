@@ -474,6 +474,7 @@ thread_make_runnable(struct thread *target, bool already_have_lock)
 	if (!already_have_lock) {
 		spinlock_release(&targetcpu->c_runqueue_lock);
 	}
+
 }
 
 pid_t pid_allocate()
@@ -906,6 +907,7 @@ void
 thread_yield(void)
 {
 	thread_switch(S_READY, NULL);
+
 }
 
 ////////////////////////////////////////////////////////////
@@ -1295,7 +1297,7 @@ interprocessor_interrupt(void)
 		}
 		else {
 			for (i=0; i<curcpu->c_numshootdown; i++) {
-				//vm_tlbshootdown(&curcpu->c_shootdown[i].ts_vaddr);
+				vm_tlbshootdown(curcpu->c_shootdown[i].ts_vaddr);
 				panic("shootdown");
 			}
 		}

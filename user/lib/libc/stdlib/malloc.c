@@ -271,9 +271,9 @@ __malloc_sbrk(size_t size)
 
 	if ((uintptr_t)x != __heaptop) {
 		errx(1, "malloc: Internal error - "
-		     "heap top moved itself from 0x%lx to 0x%lx",
+		     "heap top moved itself from 0x%lx to 0x%lx, for size %lu",
 		     (unsigned long) __heaptop,
-		     (unsigned long) (uintptr_t) x);
+		     (unsigned long) (uintptr_t) x,size);
 	}
 	__heaptop += size;
 	return x;

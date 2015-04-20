@@ -364,7 +364,7 @@ sys___execv(int *ret,const char *program, char **uargs)
 		}
 	}
 	lock_release(execv_lock);
-	kprintf("=%d=%d=",i,argc);
+	//kprintf("=%d=%d=",i,argc);
 	/* Warp to user mode. */
 	enter_new_process(argc, (userptr_t)stackptr,
 			  stackptr, entrypoint);
@@ -389,6 +389,7 @@ sys___exit(int code)
 		}
 
 	V(plist[i]->esem);
+	vm_tlbshootdown_all();
 	thread_exit();
 	return 0;
 }
@@ -398,12 +399,12 @@ sys___sbrk(int *ret, int amt)
 {
 	struct addrspace *heap=curthread->t_addrspace->heap;
 	struct PTE *temp=heap->pages;
-	vaddr_t heap_start, heap_end;
-	heap_start=temp->vaddr;
+	vaddr_t heap_start=curthread->t_addrspace->heap_start, heap_end=curthread->t_addrspace->heap_end;
+	/*heap_start=temp->vaddr;
 	while(temp->next!=NULL){
 		temp=temp->next;
 	}
-	heap_end=temp->vaddr;
+	heap_end=temp->vaddr;*/
 	if(amt==0){
 		*ret=heap_end;
 		return 0;
@@ -424,12 +425,12 @@ sys___sbrk(int *ret, int amt)
 		if(amt<PAGE_SIZE){
 			*ret=heap_end;
 			heap_end-=amt;
-			temp->vaddr-=amt;
+			//temp->vaddr-=amt;
 		}
 		else
 		{
 			size_t no=amt/PAGE_SIZE;
-			/*if((int)(heap->as_npages-no)<0)
+		/*	if((int)(heap->as_npages-no)<0)
 			{
 				*ret=-1;
 				return EINVAL;
@@ -449,6 +450,7 @@ sys___sbrk(int *ret, int amt)
 			}
 			heap->as_npages-=no;
 			*ret=heap_end;
+			heap_end-=amt;
 		}
 	}
 	else
@@ -462,7 +464,7 @@ sys___sbrk(int *ret, int amt)
 		{
 			*ret=heap_end;
 			heap_end+=amt;
-			temp->vaddr+=amt;
+			//temp->vaddr+=amt;
 		}
 		else
 		{
@@ -475,12 +477,13 @@ sys___sbrk(int *ret, int amt)
 			while(temp->next!=NULL){
 				temp=temp->next;
 			}
+			/*
 			int tot=count_free();
 			kprintf("\nFREE:%d",tot);
 			if(tot<no){
 				*ret=-1;
 				return ENOMEM;
-			}
+			}*/
 			for(int i=0;i<no;i++)
 			{
 				struct PTE *pg=(struct PTE *)kmalloc(sizeof(struct PTE));
@@ -496,7 +499,10 @@ sys___sbrk(int *ret, int amt)
 			}
 			heap->as_npages+=no;
 			*ret=heap_end;
+			heap_end+=amt;
 		}
 	}
+	curthread->t_addrspace->heap_start=heap_start;
+	curthread->t_addrspace->heap_end=heap_end;
 	return 0;
 }

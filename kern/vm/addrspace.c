@@ -337,10 +337,10 @@ as_prepare_load(struct addrspace *as)
 				pa=alloc_page();
 				if(pa==0)
 					return ENOMEM;
-				bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 				pg->paddr=pa;
 				ptemp->next=pg;
 			}
+			bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 			va+=PAGE_SIZE;
 		}
 		temp=temp->next;

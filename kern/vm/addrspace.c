@@ -340,7 +340,7 @@ as_prepare_load(struct addrspace *as)
 				pg->paddr=pa;
 				ptemp->next=pg;
 			}
-			//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+			bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 			va+=PAGE_SIZE;
 		}
 		temp=temp->next;

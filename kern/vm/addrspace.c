@@ -363,7 +363,7 @@ as_prepare_load(struct addrspace *as)
 		return ENOMEM;
 	as->heap->pages->paddr=pa;
 	as->heap_start=va;
-	as->heap_end=va+PAGE_SIZE;
+	as->heap_end=va;//+PAGE_SIZE;
 
 	vaddr_t s_va=USERSTACK-(DUMBVM_STACKPAGES*PAGE_SIZE);
 	as->stack = (struct addrspace*) kmalloc(sizeof(struct addrspace));

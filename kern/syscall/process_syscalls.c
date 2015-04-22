@@ -170,13 +170,13 @@ sys___fork(int *ret,struct trapframe * tf)
 	int result=as_copy(curthread->t_addrspace,&child_addrspace);
 	if(result)
 	{
-
+		//panic("ASCOPYLA");
 		return ENOMEM;
 	}
 
 	struct trapframe *child_tf=kmalloc(sizeof(struct trapframe));
 		if (child_tf==NULL){
-			kprintf("|trapframe malloc failed}");
+			//panic("|trapframe malloc failed}");
 			return ENOMEM;
 		}
 		*child_tf=*tf;
@@ -186,7 +186,10 @@ sys___fork(int *ret,struct trapframe * tf)
 
 	result = thread_fork("sys_fork", (void *) entrypoint, child_tf, (unsigned long)child_addrspace, &child_thread);
 	if(result)
+	{
+		//panic("fork ae pochu");
 		return ENOMEM;
+	}
 
 	*ret=child_thread->process_id;
 	return 0;
@@ -420,6 +423,7 @@ sys___sbrk(int *ret, int amt)
 		return EINVAL;
 	}
 	KASSERT((heap_end+amt)>=heap_start);
+
 	if(amt<0){
 		amt*=-1; //remove negative sign
 		if(amt<PAGE_SIZE){
@@ -460,7 +464,7 @@ sys___sbrk(int *ret, int amt)
 			*ret=-1;
 			return ENOMEM;
 		}
-		if(amt<PAGE_SIZE)// && (PAGE_SIZE- ((int)(heap_end-heap_start)%PAGE_SIZE)) > amt)
+		if(amt<PAGE_SIZE && (PAGE_SIZE- ((int)(heap_end-heap_start)%PAGE_SIZE)) > amt)
 		{
 			*ret=heap_end;
 			heap_end+=amt;
@@ -491,7 +495,7 @@ sys___sbrk(int *ret, int amt)
 				pg->perm=0;
 				pg->vaddr=temp->vaddr+PAGE_SIZE;
 				pg->paddr=alloc_page();
-				bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
+				//bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
 				if(pg->paddr==0)
 					return ENOMEM;
 				temp->next=pg;
@@ -503,7 +507,9 @@ sys___sbrk(int *ret, int amt)
 			heap_end+=amt;
 		}
 	}
-	curthread->t_addrspace->heap_start=heap_start;
+
+	//curthread->t_addrspace->heap_start=heap_start;
 	curthread->t_addrspace->heap_end=heap_end;
+
 	return 0;
 }

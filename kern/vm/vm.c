@@ -50,7 +50,7 @@ static void getswapstats(){
 	VOP_STAT(swap_vnode, &st);
 	size_t total_swap=st.st_size/PAGE_SIZE;
 	kprintf("\nSWAP MEM: %lu bytes, %d pages\n",(unsigned long)st.st_size,total_swap);
-	swap_map=bitmap_create(last_index*2);
+	swap_map=bitmap_create(last_index);
 	if(swap_map==NULL)
 		panic("SMAP IS NULL");
 }
@@ -72,7 +72,7 @@ vm_bootstrap(void)
 	free_index=getpageindex(freeaddr);
 	//last_index=getpageindex(lastaddr);
 	last_index=total_page_num-1;
-	for(int i=0;i<total_page_num;i++)
+	for(int i=0;i<last_index;i++)
 	{
 		core_map[i].paddr= (PAGE_SIZE*i) +freeaddr;
 		core_map[i].vaddr=PADDR_TO_KVADDR(core_map[i].paddr);
@@ -198,7 +198,7 @@ static struct PTE *choose_victim()
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
 			//kprintf("\nH:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-			if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
+			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 			{
 				nh=nsecs;
 				victim_pg=pages;
@@ -215,7 +215,7 @@ static struct PTE *choose_victim()
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
 			//kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-			if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
+			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 			{
 				nh=nsecs;
 				victim_pg=pages;
@@ -233,7 +233,7 @@ static struct PTE *choose_victim()
 											&secs, &nsecs);
 						nsecs=( secs*1000 ) + (nsecs/1000);
 						kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-						if((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs)
+						if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 						{
 							nh=nsecs;
 							victim_pg=pages;
@@ -292,19 +292,22 @@ static struct PTE *get_victim_page(int vind){
 	KASSERT(victim_pg!=NULL);
 	return victim_pg;
 }*/
-static int make_page_available(int npages){
+static int make_page_available(int npages,int kernel){
 	if(npages>1)
 		panic("NOO PLS");
 	struct PTE *victim_pg=choose_victim();
 	vaddr_t sa=victim_pg->saddr;
 	int vind=get_ind_coremap(victim_pg->paddr);
 	//kprintf("VIND=%d",vind);
-	/*if(last_index-vind<npages)
-		vind-=last_index-vind;*/
+	if(last_index-vind<npages)
+		vind-=last_index-vind;
 
 	for(int i=vind;i<vind+npages;i++)
 	{
-		core_map[i].pstate=DIRTY;
+		if(kernel==1)
+			core_map[i].pstate=FIXED;
+		else
+			core_map[i].pstate=DIRTY;
 		core_map[i].npages=npages;
 		time_t beforesecs=0;
 		uint32_t beforensecs=0;
@@ -353,7 +356,7 @@ vaddr_t alloc_page(void)
 	}
 	spinlock_release(&stealmem_lock);
 	if (found==-1) {
-				return make_page_available(1);
+				return make_page_available(1,0);
 		}
 
 	//pa= freeaddr + (found * PAGE_SIZE);
@@ -398,7 +401,7 @@ alloc_kpages(int npages)
 				{
 					for(int j=start;j<=i;j++)
 					{
-					core_map[j].pstate=DIRTY;
+					core_map[j].pstate=FIXED;
 					core_map[j].npages=npages;
 					gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
 		//			bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
@@ -417,7 +420,8 @@ alloc_kpages(int npages)
 		if (found==-1) {
 			/*if(npages>1)
 				panic("AYAYAOO");*/
-			return make_page_available(npages);
+			pa=make_page_available(npages,1);
+			return PADDR_TO_KVADDR(pa);
 		}
 		pa= core_map[start].paddr;
 	}

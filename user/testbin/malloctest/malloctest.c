@@ -527,10 +527,11 @@ test567(int testno, unsigned long seed)
 	printf("Seeded random number generator with %lu.\n", seed);
 
 	for (i=0; i<32; i++) {
+
 		ptrs[i] = NULL;
 		psizes[i] = 0;
 	}
-	//printf("\nfor1");
+
 	for (i=0; i<100000; i++) {
 		n = random()%32;
 		if (ptrs[n] == NULL) {
@@ -539,7 +540,7 @@ test567(int testno, unsigned long seed)
 			//printf("\nMALLOC RETURNED!\n");
 			psizes[n] = size;
 			if (ptrs[n] == NULL) {
-				printf("\nmalloc %u failed\n", size);
+		//		printf("\nmalloc %u failed\n", size);
 				failed = 1;
 				break;
 			}
@@ -558,6 +559,7 @@ test567(int testno, unsigned long seed)
 		if (i%256==0) {
 			printf(".");
 		}
+	//	printf("\ni:%d",i);
 	}
 	//printf("\nfor2");
 	//printf("\n");
@@ -567,7 +569,7 @@ test567(int testno, unsigned long seed)
 			free(ptrs[i]);
 		}
 	}
-	//printf("\nfreed");
+	printf("\nfreed");
 	if (failed) {
 		printf("FAILED malloc test %d\n", testno);
 	}

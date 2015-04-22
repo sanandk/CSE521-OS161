@@ -71,7 +71,7 @@ vm_bootstrap(void)
 	// Set page as fixed for paddr 0 to freeaddr
 	free_index=getpageindex(freeaddr);
 	//last_index=getpageindex(lastaddr);
-	last_index=total_page_num;
+	last_index=total_page_num-1;
 	for(int i=0;i<total_page_num;i++)
 	{
 		core_map[i].paddr= (PAGE_SIZE*i) +freeaddr;
@@ -359,7 +359,7 @@ vaddr_t alloc_page(void)
 	//pa= freeaddr + (found * PAGE_SIZE);
 	pa=core_map[found].paddr;
 	//kprintf("ALLOC:1 pages");
-//	bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+	//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	return pa;
 }
 
@@ -531,7 +531,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	int spl;
 
 	faultaddress &= PAGE_FRAME;
-
 	DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
 
 	switch (faulttype) {
@@ -623,10 +622,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 					temp=temp->next;
 			}
 		}
+
 	if(paddr==0)
 	{
-		paddr=alloc_page();
-		//return EFAULT;
+		//paddr=alloc_page();
+		return EFAULT;
 	}
 	else //if(page!=NULL)
 	{

@@ -399,22 +399,17 @@ sys___chdir(int *ret, char *dirname)
 int
 sys___getcwd(int *ret, char *buf, size_t buflen)
 {
-	struct iovec iov;
-	struct uio ku;
-
+	char dir[PATH_MAX];
 	if(buf==NULL || buf==(void *)0x40000000)
 	{
 			*ret=-1;
 			return EFAULT;
 	}
-	/*void *kbuf=kmalloc(sizeof(*buf)*buflen);
-	if(kbuf==NULL)
-	{
-		*ret=-1;
-		return EFAULT;
-	}*/
+	struct iovec iov;
+	struct uio ku;
+	int result ;
 	size_t len;
-	int result = copycheck2((const_userptr_t) buf, buflen, &len);
+	result = copycheck2((const_userptr_t) buf, buflen, &len);
 	if (result) {
 		return result;
 	}
@@ -424,19 +419,25 @@ sys___getcwd(int *ret, char *buf, size_t buflen)
 		{
 			*ret=-1;
 			return result;
-		}*/
-
-
-	uio_kinit(&iov, &ku, buf, buflen, 0, UIO_READ);
-	result = vfs_getcwd(&ku);
-	if (result) {
+		}
+*/
+	uio_kinit(&iov, &ku, dir, PATH_MAX, 0, UIO_READ);
+		result = vfs_getcwd(&ku);
+			if (result) {
 		*ret=-1;
 		return result;
 	}
-
+	result=copyout(dir,(userptr_t)buf,buflen);
+	if(result)
+	{
+		*ret=-1;
+		return result;
+	}
 	/* null terminate */
-	//buf[sizeof(buf)-1-ku.uio_resid] = 0;
-	*ret=strlen(buf);
+	//buf[sizeof(buf)-1-ku.uio_resid] = '\0';
+
+	*ret=-1;
+	//*ret=strlen(buf);
 	return 0;
 }
 int

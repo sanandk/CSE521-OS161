@@ -146,11 +146,11 @@ static
 void
 threadlist_removenode(struct threadlistnode *tln)
 {
-	DEBUGASSERT(tln != NULL);
-	DEBUGASSERT(tln->tln_prev != NULL);
-	DEBUGASSERT(tln->tln_next != NULL);
-
-	tln->tln_prev->tln_next = tln->tln_next;
+	KASSERT(tln != NULL);
+	KASSERT(tln->tln_prev != NULL);
+	KASSERT(tln->tln_next != NULL);
+	//if(tln->tln_prev!=NULL)
+		tln->tln_prev->tln_next = tln->tln_next;
 	tln->tln_next->tln_prev = tln->tln_prev;
 	tln->tln_prev = NULL;
 	tln->tln_next = NULL;

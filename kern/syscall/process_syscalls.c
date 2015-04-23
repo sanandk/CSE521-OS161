@@ -30,7 +30,7 @@
 
 
 #include <types.h>
-
+#include <bitmap.h>
 #include <kern/errno.h>
 #include <synch.h>
 #include <uio.h>
@@ -48,6 +48,7 @@
 #include <copyinout.h>
 #include <cpu.h>
 #include <vm.h>
+
 
 /*
  * sys_getpid system call: get current process id
@@ -403,11 +404,7 @@ sys___sbrk(int *ret, int amt)
 	struct addrspace *heap=curthread->t_addrspace->heap;
 	struct PTE *temp=heap->pages;
 	vaddr_t heap_start=curthread->t_addrspace->heap_start, heap_end=curthread->t_addrspace->heap_end;
-	/*heap_start=temp->vaddr;
-	while(temp->next!=NULL){
-		temp=temp->next;
-	}
-	heap_end=temp->vaddr;*/
+
 	if(amt==0){
 		*ret=heap_end;
 		return 0;
@@ -472,10 +469,15 @@ sys___sbrk(int *ret, int amt)
 		}
 		else
 		{
-			//amt-=PAGE_SIZE - ((heap_end-heap_start)%PAGE_SIZE);
+			int oamt=amt;
+			amt-=PAGE_SIZE - ((heap_end-heap_start)%PAGE_SIZE);
 			int no=amt/PAGE_SIZE;
 			if(amt%PAGE_SIZE){
 				no++;
+			}
+			if(last_index<no){
+				*ret=-1;
+				return ENOMEM;
 			}
 			temp=heap->pages;
 			while(temp->next!=NULL){
@@ -484,17 +486,27 @@ sys___sbrk(int *ret, int amt)
 			/*
 			int tot=count_free();
 			kprintf("\nFREE:%d",tot);*/
-			if(last_index<no){
+			/*if(last_index<no){
 				*ret=-1;
 				return ENOMEM;
-			}
+			}*/
+			vaddr_t sa;
 			for(int i=0;i<no;i++)
 			{
 				struct PTE *pg=(struct PTE *)kmalloc(sizeof(struct PTE));
 				pg->next=NULL;
 				pg->perm=0;
 				pg->vaddr=temp->vaddr+PAGE_SIZE;
+				lock_acquire(alloc_lock);
 				pg->paddr=alloc_page();
+				bitmap_alloc(swap_map, &sa);
+				if(lastsa==sa)
+						panic("pocha");
+				else
+						lastsa=sa;
+				pg->saddr=sa*PAGE_SIZE;
+				pg->swapped=0;
+				lock_release(alloc_lock);
 				//bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
 				if(pg->paddr==0)
 					return ENOMEM;
@@ -504,7 +516,7 @@ sys___sbrk(int *ret, int amt)
 			}
 			heap->as_npages+=no;
 			*ret=heap_end;
-			heap_end+=amt;
+			heap_end+=oamt;
 		}
 	}
 

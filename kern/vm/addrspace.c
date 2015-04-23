@@ -316,6 +316,10 @@ as_prepare_load(struct addrspace *as)
 				temp->pages->perm=temp->as_perm;
 				temp->pages->vaddr=va;
 				bitmap_alloc(swap_map, &sa);
+				/*if(lastsa==sa)
+						panic("pocha");
+					else*/
+						lastsa=sa;
 				temp->pages->saddr=sa*PAGE_SIZE;
 				temp->pages->swapped=0;
 				pa=alloc_page();
@@ -333,6 +337,10 @@ as_prepare_load(struct addrspace *as)
 				pg->perm=as->as_perm;
 				pg->vaddr=va;
 				bitmap_alloc(swap_map, &sa);
+				/*if(lastsa==sa)
+						panic("pocha");
+					else*/
+						lastsa=sa;
 				pg->saddr=sa*PAGE_SIZE;
 				pg->swapped=0;
 				pa=alloc_page();
@@ -341,10 +349,9 @@ as_prepare_load(struct addrspace *as)
 				pg->paddr=pa;
 				ptemp->next=pg;
 			}
-			bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+			//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 			va+=PAGE_SIZE;
 		}
-		//kprintf("\nNO=%d",as->as_npages);
 		temp=temp->next;
 	}
 
@@ -358,6 +365,10 @@ as_prepare_load(struct addrspace *as)
 	as->heap->pages->perm=0;
 	as->heap->pages->vaddr=va;
 	bitmap_alloc(swap_map, &sa);
+	/*if(lastsa==sa)
+		panic("pocha");
+	else*/
+		lastsa=sa;
 	as->heap->pages->saddr=sa*PAGE_SIZE;
 	as->heap->pages->swapped=0;
 	pa=alloc_page();
@@ -384,6 +395,10 @@ as_prepare_load(struct addrspace *as)
 			as->stack->pages->perm=0;
 			as->stack->pages->vaddr=s_va;
 			bitmap_alloc(swap_map, &sa);
+			/*if(lastsa==sa)
+					panic("pocha");
+				else*/
+					lastsa=sa;
 			as->stack->pages->saddr=sa*PAGE_SIZE;
 			as->stack->pages->swapped=0;
 			pa=alloc_page();
@@ -401,10 +416,13 @@ as_prepare_load(struct addrspace *as)
 			pg->perm=0;
 			pg->vaddr=s_va;
 			bitmap_alloc(swap_map, &sa);
+			/*if(lastsa==sa)
+					panic("pocha");
+				else*/
+					lastsa=sa;
 			pg->saddr=sa*PAGE_SIZE;
 			pg->swapped=0;
 			pa=alloc_page();
-
 			if(pa==0)
 				return ENOMEM;
 			pg->paddr=pa;
@@ -448,7 +466,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	struct addrspace *otemp=old, *ntemp, *reg;
 	while(otemp!=NULL)
 	{
-
 		if(new==NULL || new->as_npages==0){
 				ntemp = (struct addrspace*) kmalloc(sizeof(struct addrspace));
 				ntemp->as_npages=otemp->as_npages;

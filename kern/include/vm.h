@@ -45,8 +45,10 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 enum page_state_t {FREE, DIRTY, CLEAN, FIXED};
 int free_index, last_index;
+vaddr_t lastsa;
 struct coremap_page *core_map;
 struct bitmap *swap_map;
+struct lock *coremap_lock,*alloc_lock;
 struct coremap_page {
     /* where is paged mapped to */
     struct addrspace *aspace;

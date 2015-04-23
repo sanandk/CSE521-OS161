@@ -321,6 +321,7 @@ as_prepare_load(struct addrspace *as)
 				pa=alloc_page();
 				if(pa==0)
 					return ENOMEM;
+				as->as_pbase=pa;
 				temp->pages->paddr=pa;
 			}
 			else{
@@ -343,6 +344,7 @@ as_prepare_load(struct addrspace *as)
 			bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 			va+=PAGE_SIZE;
 		}
+		//kprintf("\nNO=%d",as->as_npages);
 		temp=temp->next;
 	}
 

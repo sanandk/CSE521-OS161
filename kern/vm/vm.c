@@ -36,10 +36,7 @@ static paddr_t ROUNDDOWN(paddr_t size)
 	}
 	return size;
 }
-static int getpageindex(paddr_t addr)
-{
-	return ROUNDDOWN(addr)/PAGE_SIZE;
-}
+
 static void getswapstats(){
 	struct stat st;
 	char *s=kstrdup("lhd0raw:");
@@ -50,7 +47,7 @@ static void getswapstats(){
 	VOP_STAT(swap_vnode, &st);
 	size_t total_swap=st.st_size/PAGE_SIZE;
 	kprintf("\nSWAP MEM: %lu bytes, %d pages\n",(unsigned long)st.st_size,total_swap);
-	swap_map=bitmap_create(last_index);
+	swap_map=bitmap_create(last_index*2);
 	if(swap_map==NULL)
 		panic("SMAP IS NULL");
 }
@@ -68,18 +65,24 @@ vm_bootstrap(void)
 
 	kprintf("\n%d,%x,%x,%d\n",ROUNDDOWN(lastaddr-freeaddr) / PAGE_SIZE,first_addr,lastaddr,total_page_num);
 
-	// Set page as fixed for paddr 0 to freeaddr
-	free_index=getpageindex(freeaddr);
-	//last_index=getpageindex(lastaddr);
-	last_index=total_page_num-1;
-	for(int i=0;i<last_index;i++)
+	last_index=0;
+	for(int i=0;i<total_page_num;i++)
 	{
+		if( ((PAGE_SIZE*i) + freeaddr) >=lastaddr){
+			kprintf("\nif:%x, %x",((PAGE_SIZE*i) + freeaddr), lastaddr);
+			last_index=i;
+			break;
+		}
 		core_map[i].paddr= (PAGE_SIZE*i) +freeaddr;
 		core_map[i].vaddr=PADDR_TO_KVADDR(core_map[i].paddr);
+
 		//kprintf("%x\t",core_map[i].paddr);
 		//kprintf("%x\t",core_map[i].vaddr);
 		core_map[i].pstate=FREE;
 	}
+	if(last_index==0)
+		last_index=total_page_num;
+	kprintf("%d,correct?%x,%x",last_index,core_map[last_index-1].paddr,lastaddr);
 	getswapstats();
 	vm_bootstrapped=1;
 	//kprintf("%d,%d,%d",getpageindex(0),getpageindex(freeaddr),getpageindex(lastaddr));

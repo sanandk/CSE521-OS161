@@ -444,7 +444,12 @@ sys___sbrk(int *ret, int amt)
 					while(temp->next->next!=NULL){
 						temp=temp->next;
 					}
+
+					//page_set_busy(temp->next->paddr);
 					free_page(temp->next->paddr);
+					//page_unset_busy(temp->next->paddr);
+					spinlock_cleanup(&temp->next->slock);
+
 					kfree(temp->next);
 					temp->next=NULL;
 				}
@@ -482,8 +487,8 @@ sys___sbrk(int *ret, int amt)
 			temp=heap->pages;
 			while(temp->next!=NULL){
 				temp=temp->next;
-			}
-			/*
+
+			}/*
 			int tot=count_free();
 			kprintf("\nFREE:%d",tot);*/
 			/*if(last_index<no){
@@ -497,16 +502,15 @@ sys___sbrk(int *ret, int amt)
 				pg->next=NULL;
 				pg->perm=0;
 				pg->vaddr=temp->vaddr+PAGE_SIZE;
-				lock_acquire(alloc_lock);
-				pg->paddr=alloc_page();
+				pg->paddr=alloc_page(pg);
 				bitmap_alloc(swap_map, &sa);
+				spinlock_init(&pg->slock);
 				if(lastsa==sa)
 						panic("pocha");
 				else
 						lastsa=sa;
 				pg->saddr=sa*PAGE_SIZE;
 				pg->swapped=0;
-				lock_release(alloc_lock);
 				//bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
 				if(pg->paddr==0)
 					return ENOMEM;

@@ -34,7 +34,6 @@
 #include <bitmap.h>
 
 #include <spl.h>
-#include <spinlock.h>
 #include <thread.h>
 #include <current.h>
 #include <mips/tlb.h>
@@ -297,9 +296,6 @@ static void revert_perm_temp(struct addrspace *as, paddr_t paddr){
 int
 as_prepare_load(struct addrspace *as)
 {
-	/*KASSERT(as->as_pbase1 == 0);
-	KASSERT(as->as_pbase2 == 0);
-	KASSERT(as->as_stackpbase == 0);*/
 	paddr_t pa;
 	int i;
 	vaddr_t va,sa;
@@ -322,7 +318,7 @@ as_prepare_load(struct addrspace *as)
 						lastsa=sa;
 				temp->pages->saddr=sa*PAGE_SIZE;
 				temp->pages->swapped=0;
-				pa=alloc_page();
+				pa=alloc_page(temp->pages);
 				if(pa==0)
 					return ENOMEM;
 				as->as_pbase=pa;
@@ -343,7 +339,7 @@ as_prepare_load(struct addrspace *as)
 						lastsa=sa;
 				pg->saddr=sa*PAGE_SIZE;
 				pg->swapped=0;
-				pa=alloc_page();
+				pa=alloc_page(pg);
 				if(pa==0)
 					return ENOMEM;
 				pg->paddr=pa;
@@ -371,7 +367,7 @@ as_prepare_load(struct addrspace *as)
 		lastsa=sa;
 	as->heap->pages->saddr=sa*PAGE_SIZE;
 	as->heap->pages->swapped=0;
-	pa=alloc_page();
+	pa=alloc_page(pg);
 	if(pa==0)
 		return ENOMEM;
 	as->heap->pages->paddr=pa;
@@ -401,7 +397,7 @@ as_prepare_load(struct addrspace *as)
 					lastsa=sa;
 			as->stack->pages->saddr=sa*PAGE_SIZE;
 			as->stack->pages->swapped=0;
-			pa=alloc_page();
+			pa=alloc_page(as->stack->pages);
 			if(pa==0)
 				return ENOMEM;
 			as->stack->pages->paddr=pa;
@@ -422,7 +418,7 @@ as_prepare_load(struct addrspace *as)
 					lastsa=sa;
 			pg->saddr=sa*PAGE_SIZE;
 			pg->swapped=0;
-			pa=alloc_page();
+			pa=alloc_page(pg);
 			if(pa==0)
 				return ENOMEM;
 			pg->paddr=pa;

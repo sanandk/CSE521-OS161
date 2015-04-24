@@ -34,7 +34,7 @@
  * Address space structure and operations.
  */
 
-
+#include <spinlock.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
@@ -46,6 +46,7 @@ struct PTE{
    vaddr_t saddr;
    int swapped;
    int perm;
+   struct spinlock slock;
    struct PTE *next;
 };
 

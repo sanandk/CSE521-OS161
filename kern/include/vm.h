@@ -48,11 +48,9 @@ int free_index, last_index;
 vaddr_t lastsa;
 struct coremap_page *core_map;
 struct bitmap *swap_map;
-struct lock *coremap_lock,*alloc_lock;
+//struct lock *global_paging;
 struct coremap_page {
-    /* where is paged mapped to */
-    struct addrspace *aspace;
-    vaddr_t vaddr;
+	struct PTE *page_ptr;
     paddr_t paddr;
     /* page state */
     enum page_state_t pstate;
@@ -62,15 +60,20 @@ struct coremap_page {
     /* other info for paging algorithm  */
 	time_t beforesecs;
 	uint32_t beforensecs;
-	pid_t pid;
 };
+
+struct wchan *page_wchan;
+
+void page_sneek(struct PTE *pg);
+void page_lock(struct PTE *pg);
+void page_unlock(struct PTE *pg);
 
 /* Initialization function */
 void vm_bootstrap(void);
 
 /* Fault handling function called by trap code */
 int vm_fault(int faulttype, vaddr_t faultaddress);
-vaddr_t alloc_page(void);
+vaddr_t alloc_page(struct PTE *pg);
 int count_free(void);
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(int npages);

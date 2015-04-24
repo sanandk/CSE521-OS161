@@ -17,12 +17,12 @@
 #include <kern/stat.h>
 #include <kern/fcntl.h>
 #include <bitmap.h>
-
+#include <wchan.h>
 #define DUMBVM_STACKPAGES    12
 
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 static struct spinlock tlb_lock = SPINLOCK_INITIALIZER;
-
+//static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
 
 static struct vnode *swap_vnode;
 static int vm_bootstrapped=0;
@@ -37,6 +37,69 @@ static paddr_t ROUNDDOWN(paddr_t size)
 	return size;
 }
 
+void page_lock(struct PTE *pg){
+	spinlock_acquire(&pg->slock);
+}
+void page_unlock(struct PTE *pg){
+	spinlock_release(&pg->slock);
+}
+/*static void wait_for_busypage(){
+	wchan_lock(page_wchan);
+	spinlock_release(&coremap_lock);
+	wchan_sleep(page_wchan);
+	spinlock_acquire(&coremap_lock);
+}
+ *
+ * void page_set_busy(paddr_t pa){
+	int i=get_ind_coremap(pa);
+	KASSERT(i>=0);
+	spinlock_acquire(&coremap_lock);
+	while(core_map[i].busy){
+		wait_for_busypage();
+	}
+	core_map[i].busy=1;
+	spinlock_release(&coremap_lock);
+}
+void page_unset_busy(paddr_t pa){
+	int i=get_ind_coremap(pa);
+	KASSERT(i>=0);
+	spinlock_acquire(&coremap_lock);
+	//KASSERT(core_map[i].busy==1);
+	core_map[i].busy=0;
+	wchan_wakeall(page_wchan);
+	spinlock_release(&coremap_lock);
+}
+int is_busy(paddr_t pa){
+	int i=get_ind_coremap(pa);
+	KASSERT(i>=0);
+	return core_map[i].busy;
+}*/
+/*void page_sneek(struct PTE *pg){
+	paddr_t beef=0xdeadbeef;
+	paddr_t pa,temp=beef;
+	page_lock(pg);
+	while(1)
+	{
+		pa=pg->paddr & PAGE_FRAME;
+		if(pg->swapped==1)
+			pa=beef;
+		if((unsigned int)pa==(unsigned int)temp)
+			break;
+		page_unlock(pg);
+		if((unsigned int)temp!=(unsigned int)beef){
+			page_unset_busy(temp);
+		}
+		if((unsigned int)pa==(unsigned int)beef){
+			page_lock(pg);
+			KASSERT(pg->swapped==1);
+			break;
+		}
+		page_set_busy(pa);
+		temp=pa;
+		page_lock(pg);
+	}
+}
+*/
 static void getswapstats(){
 	struct stat st;
 	char *s=kstrdup("lhd0raw:");
@@ -70,8 +133,6 @@ static void getswapstats(){
 void
 vm_bootstrap(void)
 {
-	coremap_lock = lock_create("core_map");
-	alloc_lock = lock_create("alloc");
 	paddr_t first_addr, lastaddr;
 	ram_getsize(&first_addr, &lastaddr);
 	int total_page_num = (lastaddr-first_addr) / PAGE_SIZE;
@@ -91,14 +152,17 @@ vm_bootstrap(void)
 			break;
 		}
 		core_map[i].paddr= (PAGE_SIZE*i) +freeaddr;
-		core_map[i].vaddr=PADDR_TO_KVADDR(core_map[i].paddr);
 
 		//kprintf("%x\t",core_map[i].paddr);
-		//kprintf("%x\t",core_map[i].vaddr);
+		core_map[i].page_ptr=NULL;
 		core_map[i].pstate=FREE;
 	}
 	if(last_index==0)
 		last_index=total_page_num;
+
+//	global_paging=lock_create("GLOBAL PAGE LOCK");
+	page_wchan=wchan_create("PAGE_WCHAN");
+
 	kprintf("%d,correct?%x,%x",last_index,core_map[last_index-1].paddr,lastaddr);
 	getswapstats();
 	vm_bootstrapped=1;
@@ -139,15 +203,15 @@ static void access_swap(paddr_t pa, vaddr_t sa, enum uio_rw mode){
 }
 static void swapin(paddr_t pa, vaddr_t sa){
 	//kprintf("\nswapin");
-	lock_acquire(coremap_lock);
+
 	access_swap(pa, sa, UIO_READ);
-	lock_release(coremap_lock);
+
 }
 static void swapout(paddr_t pa, vaddr_t sa){
-	lock_acquire(coremap_lock);
+
 	//kprintf("\nswapout");
 	access_swap(pa, sa, UIO_WRITE);
-	lock_release(coremap_lock);
+
 }
 
 
@@ -323,7 +387,7 @@ static int make_page_available(int npages,int kernel){
 	victim_pg->swapped=1;
 	vaddr_t sa=victim_pg->saddr;
 	int vind=get_ind_coremap(victim_pg->paddr);
-	//kprintf("VIND=%d",vind);
+
 	if(last_index-vind<npages)
 		vind-=last_index-vind;
 
@@ -334,22 +398,14 @@ static int make_page_available(int npages,int kernel){
 		else
 			core_map[i].pstate=DIRTY;
 		core_map[i].npages=npages;
-		time_t beforesecs=0;
-		uint32_t beforensecs=0;
-		gettime(&beforesecs, &beforensecs);
-		core_map[i].beforesecs=beforesecs;
-		core_map[i].beforensecs=beforensecs;
 
-		swapout(core_map[i].paddr, sa);
 		vm_tlbshootdown(victim_pg->vaddr);
-	}
+//		spinlock_release(&coremap_lock);
+		swapout(core_map[i].paddr, sa);
+//		spinlock_acquire(&coremap_lock);
 
-	if(core_map[vind].vaddr<=USERSPACETOP){
-		kprintf("%x,%x",core_map[vind].vaddr,USERSPACETOP);
-		panic("POCHE");
 	}
-	//bzero((void *)PADDR_TO_KVADDR(core_map[vind].paddr), PAGE_SIZE);
-	return core_map[vind].paddr;
+	return vind;
 }
 	/*
 static int flush_page(){
@@ -365,34 +421,33 @@ static int flush_page(){
 }*/
 
 /* Allocate/free some kernel-space virtual pages */
-vaddr_t alloc_page(void)
+vaddr_t alloc_page(struct PTE *pg)
 {
 	paddr_t pa;
-	spinlock_acquire(&stealmem_lock);
+	//lock_acquire(global_paging);
+	//spinlock_acquire(&coremap_lock);
 	int found=-1;
 	for(int i=0;i<last_index;i++)
 	{
 		if(core_map[i].pstate==FREE)
 		{
-			core_map[i].pstate=DIRTY;
-			core_map[i].npages=1;
-			gettime(&core_map[i].beforesecs, &core_map[i].beforensecs);
 			found=i;
 			break;
 		}
 	}
-	spinlock_release(&stealmem_lock);
 	if (found==-1) {
-
-				pa=make_page_available(1,0);
-				bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
-				return pa;
+				found=make_page_available(1,0);
 		}
-
-	//pa= freeaddr + (found * PAGE_SIZE);
+	core_map[found].pstate=DIRTY;
+	core_map[found].npages=1;
+	gettime(&core_map[found].beforesecs, &core_map[found].beforensecs);
+	core_map[found].page_ptr=pg;
 	pa=core_map[found].paddr;
+	KASSERT(pa!=0);
 	bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
-	//kprintf("ALLOC:1 pages");
+
+	//spinlock_release(&coremap_lock);
+	//lock_release(global_paging);
 	return pa;
 }
 
@@ -415,11 +470,13 @@ vaddr_t
 alloc_kpages(int npages)
 {
 	paddr_t pa;
-	if(vm_bootstrapped==0)
+	if(vm_bootstrapped==0){
 		pa = getppages(npages);
+	}
 	else
 	{
-		spinlock_acquire(&stealmem_lock);
+		//lock_acquire(global_paging);
+		//spinlock_acquire(&coremap_lock);
 		int found=-1,start=-1;
 		for(int i=0;i<last_index;i++)
 		{
@@ -433,6 +490,7 @@ alloc_kpages(int npages)
 					{
 					core_map[j].pstate=FIXED;
 					core_map[j].npages=npages;
+					core_map[j].page_ptr=NULL;
 					gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
 					//bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
 					}
@@ -445,64 +503,42 @@ alloc_kpages(int npages)
 				start=-1;
 			}
 		}
-		spinlock_release(&stealmem_lock);
 		if (found==-1) {
-			/*if(npages>1)
-				panic("AYAYAOO");*/
-			//spinlock_acquire(&stealmem_lock2);
-			pa=make_page_available(npages,1);
-			//spinlock_release(&stealmem_lock2);
-			//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
-			return PADDR_TO_KVADDR(pa);
+			found=make_page_available(npages,1);
+			core_map[found].pstate=FIXED;
+			core_map[found].npages=npages;
+			core_map[found].page_ptr=NULL;
+			gettime(&core_map[found].beforesecs, &core_map[found].beforensecs);
+			start=found;
 		}
 		pa= core_map[start].paddr;
-	}
-	if (pa==0) {
-		return 0;
+		//spinlock_release(&coremap_lock);
+		//lock_release(global_paging);
 	}
 
-	//kprintf("ALLOC:%d pages",npages);
 	return PADDR_TO_KVADDR(pa);
 }
 
 void
 free_page(paddr_t addr)
 {
-	int done=0;
-	spinlock_acquire(&stealmem_lock);
-	for(int i=0;i<last_index;i++)
+	int i=get_ind_coremap(addr);
+	//spinlock_acquire(&coremap_lock);
+	for(int j=i;j<i+core_map[i].npages;j++)
 	{
-		if(core_map[i].paddr==addr)
-		{
-			done=1;
-			core_map[i].pstate=FREE;
-			vm_tlbshootdown(core_map[i].vaddr);
-			break;
-		}
+		vm_tlbshootdown(PADDR_TO_KVADDR(core_map[j].paddr));
+		core_map[j].pstate=FREE;
+		core_map[j].page_ptr=NULL;
 	}
-	if(done==0)
-		panic("free_page not performed");
-	spinlock_release(&stealmem_lock);
+
+	//spinlock_release(&coremap_lock);
 }
 
 void
 free_kpages(vaddr_t addr)
 {
 	paddr_t pa=KVADDR_TO_PADDR(addr);
-	spinlock_acquire(&stealmem_lock);
-	for(int i=0;i<last_index;i++)
-	{
-		if(core_map[i].paddr==pa)
-		{
-			for(int j=i;j<i+core_map[i].npages;j++)
-			{
-				core_map[j].pstate=FREE;
-				vm_tlbshootdown(core_map[j].vaddr);
-			}
-			break;
-		}
-	}
-	spinlock_release(&stealmem_lock);
+	free_page(pa);
 }
 
 
@@ -520,25 +556,16 @@ vm_tlbshootdown_all(void)
 void
 vm_tlbshootdown(vaddr_t va)
 {
-	//pa = pa | TLBLO_DIRTY | TLBLO_VALID;
 	uint32_t ehi, elo;
 	int spl=splhigh(),i;
 	i=tlb_probe(va & PAGE_FRAME,0);
-	/*if(va==0x40000)
-	{
-//	kprintf("\nDeleting TLB entry %d",i);*/
-	//if(i==-1)
-	{
-
-	for(i=0;i<NUM_TLB;i++)
-	{
-		tlb_read(&ehi, &elo, i);
-		if(ehi==va)
-			tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
-
-//		kprintf("\n%x?,%x,%x",va,ehi,elo);
-	}
-	//panic("AYA");
+	if(i==-1){
+		for(i=0;i<NUM_TLB;i++)
+		{
+			tlb_read(&ehi, &elo, i);
+			if(ehi==va)
+				tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
+		}
 	}
 	tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
 	splx(spl);

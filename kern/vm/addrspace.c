@@ -427,8 +427,10 @@ as_prepare_load_wrapper(struct addrspace *as, int pin)
 			ptemp->next=pg;
 		}
 		s_va+=PAGE_SIZE;
-		if(pin==0)
+		if(pin==0){
 			page_unset_busy(pa);
+		}
+
 	}
 
 	return 0;
@@ -484,13 +486,12 @@ static void copy_region(struct addrspace *newreg, struct addrspace *oldreg){
 				memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
 								(const void *)PADDR_TO_KVADDR(temp1->paddr),
 								PAGE_SIZE);
-
 			page_unlock(temp1);
 			page_unlock(temp2);
 			page_unset_busy(temp2->paddr);
 			page_unset_busy(temp1->paddr);
-
 			temp1=temp1->next;
+
 			temp2=temp2->next;
 		}
 }

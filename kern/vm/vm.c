@@ -485,16 +485,12 @@ vaddr_t alloc_page(struct PTE *pg)
 	gettime(&core_map[found].beforesecs, &core_map[found].beforensecs);
 	core_map[found].page_ptr=pg;
 	pa=core_map[found].paddr;
+	KASSERT(pa!=0);
 
+	bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	spinlock_release(&coremap_lock);
 	lock_release(biglock_paging);
-	if(pa==0)
-	{
-		kprintf("\n%d",found);
-	//	panic("\nfound=%d,%x,%d",found,core_map[found].paddr,last_index);
-	}
-	KASSERT(pa!=0);
-	bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+
 	return pa;
 }
 

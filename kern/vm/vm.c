@@ -39,11 +39,13 @@ static paddr_t ROUNDDOWN(paddr_t size)
 }
 static int get_ind_coremap(paddr_t paddr)
 {
-	int i;
-	for(i=0;i<last_index;i++)
+	int i=(paddr-freeaddr)/PAGE_SIZE;
+	if(i>last_index || i<0)
+		return -1;
+	/*for(i=0;i<last_index;i++)
 			if(core_map[i].paddr==paddr)
-				return i;
-	return -1;
+				return i;*/
+	return i;
 }
 static struct PTE *lookup_region(vaddr_t va, struct addrspace *as, int pa){
 	if(as==NULL)
@@ -63,10 +65,11 @@ static struct PTE *lookup_region(vaddr_t va, struct addrspace *as, int pa){
 static struct PTE* find_in_as(vaddr_t va){
 	struct PTE *pg=NULL;
 	struct addrspace *as=curthread->t_addrspace,*temp;
-	temp=as;
 	if(as==NULL)
-		panic("NULL");
-
+		return NULL;
+	int it=0;
+	try:
+	temp=as;
 	while(pg==NULL && temp!=NULL){
 		pg=lookup_region(va, temp,0);
 		temp=temp->next;
@@ -75,6 +78,11 @@ static struct PTE* find_in_as(vaddr_t va){
 		pg=lookup_region(va, as->stack,0);
 	if(pg==NULL)
 		pg=lookup_region(va, as->heap,0);
+	if(pg==NULL && it==0){
+		as=curthread->parent->t_addrspace;
+		it++;
+		goto try;
+	}
 	return pg;
 }
 /*static struct PTE* pfind_in_as(paddr_t va){
@@ -330,8 +338,7 @@ static struct PTE *choose_victim()
 								aftersecs, afternsecs,
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
-			//kprintf("\nH:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-			if(core_map[i].pstate!=FIXED && core_map[i].busy==0 && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
+			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 			{
 				nh=nsecs;
 				victim_pg=pages;
@@ -349,8 +356,7 @@ static struct PTE *choose_victim()
 								aftersecs, afternsecs,
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
-			//kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-			if(core_map[i].pstate!=FIXED && core_map[i].busy==0 && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
+			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 			{
 				nh=nsecs;
 				victim_pg=pages;
@@ -697,7 +703,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	faultaddress &= PAGE_FRAME;
 	if(pg==NULL){
 		//pg=init_fault(faultaddress);
-		panic("a");
 		return EFAULT;
 	}
 

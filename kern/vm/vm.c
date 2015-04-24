@@ -46,7 +46,8 @@ static int get_ind_coremap(paddr_t paddr)
 	return -1;
 }
 static struct PTE *lookup_region(vaddr_t va, struct addrspace *as, int pa){
-	KASSERT(as!=NULL);
+	if(as==NULL)
+		return NULL;
 	struct PTE *temp=as->pages;
 	while(temp!=NULL){
 		if(pa==0)
@@ -59,10 +60,12 @@ static struct PTE *lookup_region(vaddr_t va, struct addrspace *as, int pa){
 	}
 	return NULL;
 }
-static struct PTE* find_in_as(struct addrspace *as,vaddr_t va){
+static struct PTE* find_in_as(vaddr_t va){
 	struct PTE *pg=NULL;
-	struct addrspace *temp=as;
-	KASSERT(as!=NULL);
+	struct addrspace *as=curthread->t_addrspace,*temp;
+	temp=as;
+	if(as==NULL)
+		panic("NULL");
 
 	while(pg==NULL && temp!=NULL){
 		pg=lookup_region(va, temp,0);
@@ -72,7 +75,6 @@ static struct PTE* find_in_as(struct addrspace *as,vaddr_t va){
 		pg=lookup_region(va, as->stack,0);
 	if(pg==NULL)
 		pg=lookup_region(va, as->heap,0);
-
 	return pg;
 }
 /*static struct PTE* pfind_in_as(paddr_t va){
@@ -133,19 +135,18 @@ void page_sneek(struct PTE *pg){
 	paddr_t beef=0xdeadbeef;
 	paddr_t pa,temp=beef;
 	page_lock(pg);
-	int i=0;
 	while(1)
 	{
 		pa=pg->paddr & PAGE_FRAME;
 		if(pg->swapped==1)
 			pa=beef;
-		if(pa==temp)
+		if((unsigned int)pa==(unsigned int)temp)
 			break;
 		page_unlock(pg);
-		if(temp!=beef){
+		if((unsigned int)temp!=(unsigned int)beef){
 			page_unset_busy(temp);
 		}
-		if(pa==beef){
+		if((unsigned int)pa==(unsigned int)beef){
 			page_lock(pg);
 			KASSERT(pg->swapped==1);
 			break;
@@ -153,17 +154,7 @@ void page_sneek(struct PTE *pg){
 		page_set_busy(pa);
 		temp=pa;
 		page_lock(pg);
-		if(++i==5)
-			panic("INIFINTE LOOP!");
 	}
-	/*paddr_t pa;
-	page_lock(pg);
-	pa=pg->paddr;
-	if(pg->swapped==1)
-		return;
-	page_unlock(pg);
-	page_set_busy(pa);
-	page_lock(pg);*/
 }
 
 static void getswapstats(){
@@ -202,7 +193,7 @@ vm_bootstrap(void)
 	paddr_t first_addr, lastaddr;
 	ram_getsize(&first_addr, &lastaddr);
 
-	//tlb_wchan=wchan_create("TLB_WCHAN");
+//	tlb_wchan=wchan_create("TLB_WCHAN");
 	page_wchan=wchan_create("PG_WCHAN");
 	biglock_paging=lock_create("biglock_paging");
 	getswapstats();
@@ -317,7 +308,7 @@ int count_free()
 	return victim_ind;
 }*/
 
-/*static struct PTE *choose_victim()
+static struct PTE *choose_victim()
 {
 	int i;
 	time_t aftersecs, secs;
@@ -340,7 +331,7 @@ int count_free()
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
 			//kprintf("\nH:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
+			if(core_map[i].pstate!=FIXED && core_map[i].busy==0 && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 			{
 				nh=nsecs;
 				victim_pg=pages;
@@ -359,7 +350,7 @@ int count_free()
 								&secs, &nsecs);
 			nsecs=( secs*1000 ) + (nsecs/1000);
 			//kprintf("\nS:%lu,%lu",(unsigned long)nh,(unsigned long)nsecs);
-			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
+			if(core_map[i].pstate!=FIXED && core_map[i].busy==0 && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 			{
 				nh=nsecs;
 				victim_pg=pages;
@@ -369,7 +360,7 @@ int count_free()
 	}
 	KASSERT(victim_pg!=NULL);
 	return victim_pg;
-}*/
+}
 /*static int make_page_available(int npages,int kernel){
 	if(npages>1)
 		panic("NOO PLS");
@@ -423,31 +414,28 @@ static int flush_page(){
 static int make_page_available(int npages,int kernel){
 	if(npages>1) // Not necessary so far
 		panic("NOO PLS");
-	struct PTE *victim_pg;
-	//itsok:
+	struct PTE *victim_pg=choose_victim();
+	/*itsok:
 	if(evict_index==last_index-1)
 	{
 		evict_index=0;
 	}
 	++evict_index;
-	while(core_map[evict_index].pstate==FIXED || core_map[evict_index].busy!=0)
+	while(core_map[evict_index].pstate==FIXED)
 		++evict_index;
 
-	KASSERT(core_map[evict_index].page_ptr!=NULL);
+	if(victim_pg==NULL)
+		goto itsok;*/
+	evict_index=get_ind_coremap(victim_pg->paddr);
+	KASSERT(evict_index>=0);
+
 	core_map[evict_index].busy=1;
 	core_map[evict_index].npages=npages;
 	if(kernel==0)
 		core_map[evict_index].pstate=DIRTY;
 	else
 		core_map[evict_index].pstate=FIXED;
-	victim_pg=core_map[evict_index].page_ptr;
-	/*if(victim_pg==NULL){
-		panic("\n%d,%x",evict_index,core_map[evict_index].paddr);
-		victim_pg=pfind_in_as(core_map[evict_index].paddr);
-	}*/
-	//if(victim_pg==NULL)
-		//goto itsok;
-	KASSERT(victim_pg!=NULL);
+
 	victim_pg->swapped=1;
 	vaddr_t sa=victim_pg->saddr;
 
@@ -466,7 +454,7 @@ static int make_page_available(int npages,int kernel){
 vaddr_t alloc_page(struct PTE *pg)
 {
 	KASSERT(curthread!=NULL);
-	paddr_t pa=0xdeadbeef;
+	paddr_t pa;
 	int found=-1;
 
 	lock_acquire(biglock_paging);
@@ -480,6 +468,7 @@ vaddr_t alloc_page(struct PTE *pg)
 			break;
 		}
 	}
+
 	if (found==-1) {
 		found=make_page_available(1,0);
 	}
@@ -487,15 +476,15 @@ vaddr_t alloc_page(struct PTE *pg)
 	core_map[found].pstate=DIRTY;
 	core_map[found].npages=1;
 	core_map[found].busy=1;
-	//gettime(&core_map[i].beforesecs, &core_map[i].beforensecs);
+	gettime(&core_map[found].beforesecs, &core_map[found].beforensecs);
 	core_map[found].page_ptr=pg;
 	pa=core_map[found].paddr;
 
 	spinlock_release(&coremap_lock);
 	lock_release(biglock_paging);
-	if(pa==0xdeadbeef)
+	if(pa==0)
 	{
-		panic("%d",found);
+		kprintf("\n%d",found);
 	//	panic("\nfound=%d,%x,%d",found,core_map[found].paddr,last_index);
 	}
 	KASSERT(pa!=0);
@@ -543,7 +532,7 @@ alloc_kpages(int npages)
 					core_map[j].busy=0;
 					core_map[j].page_ptr=NULL;
 					core_map[j].npages=npages;
-					//gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
+					gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
 				//	bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
 					}
 					found=i;
@@ -662,11 +651,10 @@ static vaddr_t getsecond10(vaddr_t addr){
 
 
 
-static struct PTE* init_fault(vaddr_t faultaddress){
-	KASSERT(faultaddress>0);
+/*static struct PTE* init_fault(vaddr_t faultaddress){
 	struct addrspace *curspace=curthread->t_addrspace,*as=curspace;
 	vaddr_t base,top,sa;
-	int found=0;
+
 	//Check regions
 	while(as!=NULL){
 		base=as->as_vbase;
@@ -675,16 +663,11 @@ static struct PTE* init_fault(vaddr_t faultaddress){
 		else
 			top=curspace->heap_start;
 
-		if((unsigned int)faultaddress>=(unsigned int)base && (unsigned int)faultaddress<(unsigned int)top){
-				found=1;
+		if((unsigned int)faultaddress>=(unsigned int)base && (unsigned int)faultaddress<(unsigned int)top)
 				break;
-		}
-		kprintf("\nR:base:%x,top:%x,%x",(unsigned int)base,(unsigned int)top,(unsigned int)faultaddress);
 		as=as->next;
 	}
-	if(found!=1)
-		kprintf("\nheap_end:%x",(unsigned int)curspace->heap_end);
-	KASSERT(found==1);
+
 	struct PTE *pg=(struct PTE *)kmalloc(sizeof(struct PTE));
 	pg->next=NULL;
 	pg->perm=0;
@@ -701,7 +684,7 @@ static struct PTE* init_fault(vaddr_t faultaddress){
 	ptable->next=pg;
 	page_unset_busy(pg->paddr);
 	return pg;
-}
+}*/
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
@@ -710,25 +693,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return EFAULT;
 	DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
 //	kprintf("VMFAULT=%x",faultaddress);
-	struct PTE *pg=find_in_as(curthread->t_addrspace,faultaddress);
+	struct PTE *pg=find_in_as(faultaddress);
 	faultaddress &= PAGE_FRAME;
 	if(pg==NULL){
-		/*vaddr_t v;
-		for(int i=0;i<last_index;i++){
-			kprintf("PG NOT FOUND!!: %x",faultaddress);
-			v=0;
-			if(core_map[i].pstate==FIXED)
-				kprintf("\nC:%d:%x,FIXED",i,core_map[i].paddr);
-			else if(core_map[i].pstate==DIRTY)
-			{
-				KASSERT(core_map[i].page_ptr!=NULL);
-				v=core_map[i].page_ptr->vaddr;
-				kprintf("\nC:%d:%x,%x",i,core_map[i].paddr,v);
-			}
-			panic("PG NOT FOUND!!: %x",faultaddress);
-		}*/
-		pg=init_fault(faultaddress);
-		//return EFAULT;
+		//pg=init_fault(faultaddress);
+		panic("a");
+		return EFAULT;
 	}
 
 	page_sneek(pg);
@@ -747,7 +717,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			core_map[kernel].busy=0;
 			core_map[kernel].page_ptr=NULL;
 		}
-//		KASSERT(is_busy(paddr));
+		KASSERT(is_busy(paddr));
 		lock_acquire(biglock_paging);
 
 		swapin(paddr,pg->saddr);

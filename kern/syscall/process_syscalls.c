@@ -511,7 +511,7 @@ sys___sbrk(int *ret, int amt)
 						lastsa=sa;
 				pg->saddr=sa*PAGE_SIZE;
 				pg->swapped=0;
-				//bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
+				bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
 				if(pg->paddr==0)
 					return ENOMEM;
 				temp->next=pg;

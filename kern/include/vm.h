@@ -48,7 +48,7 @@ int free_index, last_index;
 vaddr_t lastsa;
 struct coremap_page *core_map;
 struct bitmap *swap_map;
-//struct lock *global_paging;
+struct lock *biglock_paging;
 struct coremap_page {
 	struct PTE *page_ptr;
     paddr_t paddr;
@@ -56,17 +56,24 @@ struct coremap_page {
     enum page_state_t pstate;
 
     int npages; //single/multi page allocation
+    int busy;
 
     /* other info for paging algorithm  */
 	time_t beforesecs;
 	uint32_t beforensecs;
 };
 
+int evict_index;
 struct wchan *page_wchan;
 
 void page_sneek(struct PTE *pg);
 void page_lock(struct PTE *pg);
 void page_unlock(struct PTE *pg);
+void page_set_busy(paddr_t pa);
+void page_unset_busy(paddr_t pa);
+int is_busy(paddr_t pa);
+void swapin(paddr_t pa, vaddr_t sa);
+void swapout(paddr_t pa, vaddr_t sa);
 
 /* Initialization function */
 void vm_bootstrap(void);

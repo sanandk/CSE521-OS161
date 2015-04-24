@@ -40,8 +40,9 @@ static paddr_t ROUNDDOWN(paddr_t size)
 static int get_ind_coremap(paddr_t paddr)
 {
 	int i=(paddr-freeaddr)/PAGE_SIZE;
-	if(i>last_index || i<0)
+	if(i>last_index || i<0){
 		return -1;
+	}
 	/*for(i=0;i<last_index;i++)
 			if(core_map[i].paddr==paddr)
 				return i;*/
@@ -84,6 +85,56 @@ static struct PTE* find_in_as(vaddr_t va){
 		goto try;
 	}
 	return pg;
+}
+static void delete_page(struct PTE *dpage, struct addrspace *as){
+	struct PTE *temp=as->pages;
+	if(temp==dpage)
+	{
+		as->pages=temp->next;
+		kfree(dpage);
+		return;
+	}
+	while(temp!=NULL)
+	{
+		if(temp->next==dpage)
+		{
+			temp->next=dpage->next;
+			kfree(dpage);
+			return;
+		}
+		temp=temp->next;
+	}
+}
+static void del_in_as(vaddr_t va){
+	struct PTE *pg=NULL;
+	struct addrspace *as=curthread->t_addrspace,*temp;
+	if(as==NULL)
+		return;
+	int it=0;
+	try:
+	temp=as;
+	while(pg==NULL && temp!=NULL){
+		pg=lookup_region(va, temp,0);
+		if(pg!=NULL)
+			delete_page(pg,temp);
+		temp=temp->next;
+	}
+	if(pg==NULL){
+		pg=lookup_region(va, as->stack,0);
+		if(pg!=NULL)
+			delete_page(pg,as->stack);
+	}
+	if(pg==NULL){
+		pg=lookup_region(va, as->heap,0);
+		if(pg!=NULL)
+			delete_page(pg,as->heap);
+	}
+
+	if(pg==NULL && it==0){
+		as=curthread->parent->t_addrspace;
+		it++;
+		goto try;
+	}
 }
 /*static struct PTE* pfind_in_as(paddr_t va){
 	struct PTE *pg=NULL;
@@ -535,7 +586,7 @@ alloc_kpages(int npages)
 					core_map[j].page_ptr=NULL;
 					core_map[j].npages=npages;
 					gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
-				//	bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
+			//		bzero((void *)PADDR_TO_KVADDR(core_map[j].paddr), PAGE_SIZE);
 					}
 					found=i;
 					break;
@@ -556,7 +607,7 @@ alloc_kpages(int npages)
 			pa=core_map[found].paddr;
 			spinlock_release(&coremap_lock);
 			lock_release(biglock_paging);
-			//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+//			bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 			return PADDR_TO_KVADDR(pa);
 		}
 		pa= core_map[start].paddr;
@@ -567,21 +618,23 @@ alloc_kpages(int npages)
 }
 
 void
-free_page(paddr_t addr)
+free_page(paddr_t addr, int clean)
 {
 	int i=get_ind_coremap(addr);
 	//KASSERT(i!=-1);
 	//KASSERT(core_map[i].pstate!=FREE);
 	//KASSERT(core_map[i].busy==1 || core_map[i].pstate==FIXED);
-
 	spinlock_acquire(&coremap_lock);
 	for(int j=i;j<i+core_map[i].npages;j++)
 	{
 		vm_tlbshootdown(PADDR_TO_KVADDR(core_map[j].paddr));
 		core_map[j].pstate=FREE;
+		if(clean==1){
+			if(core_map[j].page_ptr!=NULL)
+				del_in_as(core_map[j].page_ptr->vaddr);
+		}
 		core_map[j].page_ptr=NULL;
 	}
-
 	spinlock_release(&coremap_lock);
 }
 
@@ -589,7 +642,7 @@ void
 free_kpages(vaddr_t addr)
 {
 	paddr_t pa=KVADDR_TO_PADDR(addr);
-	free_page(pa);
+	free_page(pa, 0);
 }
 
 

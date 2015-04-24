@@ -82,7 +82,7 @@ static void destroy_pages(struct addrspace *temp)
 	struct PTE *ptemp=temp->pages, *del;
 	while(ptemp!=NULL){
 		page_set_busy(ptemp->paddr);
-		free_page(ptemp->paddr);
+		free_page(ptemp->paddr, 0);
 		page_unset_busy(ptemp->paddr);
 		spinlock_cleanup(&ptemp->slock);
 		del=ptemp;
@@ -97,16 +97,16 @@ as_destroy(struct addrspace *as)
 	struct addrspace *temp=as,*del;
 	destroy_pages(as->heap);
 	destroy_pages(as->stack);
-	kfree(as->heap);
-	kfree(as->stack);
+	//kfree(as->heap);
+	//kfree(as->stack);
 	while(temp!=NULL)
 	{
 			destroy_pages(temp);
-			del=temp;
+			//del=temp;
 			temp=temp->next;
-			kfree(del);
+			//kfree(del);
 	}
-
+	(void)del;
 	//kfree(as);
 }
 
@@ -470,6 +470,7 @@ static void copy_region(struct addrspace *newreg, struct addrspace *oldreg){
 		{
 			page_lock(temp2);
 			page_sneek(temp1);
+
 			if(temp1->swapped==1)
 			{
 				page_unlock(temp1);
@@ -494,6 +495,7 @@ static void copy_region(struct addrspace *newreg, struct addrspace *oldreg){
 
 			temp2=temp2->next;
 		}
+
 }
 
 int

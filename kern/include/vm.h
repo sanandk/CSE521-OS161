@@ -86,7 +86,7 @@ int count_free(void);
 vaddr_t alloc_kpages(int npages);
 
 void free_kpages(vaddr_t addr);
-void free_page(vaddr_t addr);
+void free_page(vaddr_t addr, int);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);

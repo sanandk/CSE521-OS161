@@ -446,7 +446,7 @@ sys___sbrk(int *ret, int amt)
 					}
 
 					//page_set_busy(temp->next->paddr);
-					free_page(temp->next->paddr);
+					free_page(temp->next->paddr,1);
 					//page_unset_busy(temp->next->paddr);
 					spinlock_cleanup(&temp->next->slock);
 

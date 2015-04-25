@@ -842,8 +842,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	int ind=get_ind_coremap(paddr);
 	KASSERT(ind>=0);
 	ti=tlb_probe(faultaddress, 0);
-	ehi = faultaddress;
-	elo = paddr | TLBLO_VALID;
+
 	if(ti<0){
 			// INSERT INTO TLB FREE SLOT
 			for (i=0; i<NUM_TLB; i++) {
@@ -858,6 +857,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 			if(ti<0)
 			{
+				ehi = faultaddress;
+				elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
 				tlb_random(ehi, elo);
 				ti=tlb_probe(faultaddress, 0);
 				core_map[ind].tlbind=ti;
@@ -867,8 +868,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 	if(ti>=0){
 	KASSERT(core_map[ind].tlbind==ti);
+	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
 	KASSERT(core_map[ind].cpuid==curcpu->c_number);
 	}
+	ehi = faultaddress;
 	tlb_write(ehi, elo, ti);
 	core_map[ind].busy=0;
 	wchan_wakeall(page_wchan);

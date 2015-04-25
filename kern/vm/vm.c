@@ -366,7 +366,7 @@ static int choose_victim(){
 		nsecs=( secs*1000 ) + (nsecs/1000);
 		//kprintf("\n%lu,%lu sec",(unsigned long)nh,(unsigned long)nsecs);
 
-			if((core_map[i].pstate==FREE && core_map[i].busy==0) && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
+			if((core_map[i].pstate==DIRTY && core_map[i].busy==0) && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
 			{
 				nh=nsecs;
 				victim_ind=i;
@@ -482,10 +482,13 @@ static int make_page_available(int npages,int kernel){
 		panic("NOO PLS");
 	vaddr_t oldva;
 	evict_index=choose_victim();
-	struct PTE *victim_pg=core_map[evict_index].page_ptr;
 	KASSERT(evict_index>=0);
+	struct PTE *victim_pg=core_map[evict_index].page_ptr;
 	KASSERT(core_map[evict_index].pstate!=FIXED);
 	KASSERT(core_map[evict_index].busy!=1);
+//	KASSERT(count_free()==0);
+	KASSERT(victim_pg!=NULL);
+
 	core_map[evict_index].busy=1;
 	core_map[evict_index].npages=npages;
 	if(kernel==0)
@@ -634,7 +637,7 @@ void
 free_page(paddr_t addr)
 {
 	int i=get_ind_coremap(addr);
-	KASSERT(i!=-1);
+	//KASSERT(i!=-1);
 	//KASSERT(core_map[i].pstate!=FREE);
 	//KASSERT(core_map[i].busy==1 || core_map[i].pstate==FIXED);
 	spinlock_acquire(&coremap_lock);
@@ -642,12 +645,9 @@ free_page(paddr_t addr)
 	{
 		vm_tlbshootdown(j, 1);
 		core_map[j].pstate=FREE;
+		core_map[j].busy=0;
 		core_map[j].cpuid=0;
 		core_map[j].tlbind=-1;
-		/*if(clean==1){
-			//if(core_map[j].page_ptr!=NULL)
-				del_in_as(core_map[j].page_ptr->vaddr);
-		}*/
 		core_map[j].page_ptr=NULL;
 	}
 	spinlock_release(&coremap_lock);

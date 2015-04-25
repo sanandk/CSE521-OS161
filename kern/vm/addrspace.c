@@ -96,9 +96,8 @@ static void region_destroy(struct region *reg)
 			}
 			else
 				page_unlock(pg);
+			spinlock_cleanup(&pg->slock);
 		}
-
-		spinlock_cleanup(&pg->slock);
 		kfree(pg);
 	}
 	pagetable_array_setsize(reg->pages, 0);
@@ -384,6 +383,7 @@ static int page_copy(struct PTE *old, struct PTE **ret)
 
 	page_create(&new, &newpa);
 	KASSERT(is_busy(newpa));
+	page_sneek(old);
 	oldpa=old->paddr & PAGE_FRAME;
 	if(old->swapped==1){
 		sa=old->saddr;

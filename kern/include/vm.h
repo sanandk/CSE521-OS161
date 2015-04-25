@@ -57,6 +57,8 @@ struct coremap_page {
 
     int npages; //single/multi page allocation
     int busy;
+    int tlbind;
+    unsigned cpuid;
 
     /* other info for paging algorithm  */
 	time_t beforesecs;
@@ -64,8 +66,8 @@ struct coremap_page {
 };
 
 int evict_index;
-struct wchan *page_wchan;
-
+struct wchan *page_wchan, *tlb_wchan;
+int get_ind_coremap(paddr_t paddr);
 void page_sneek(struct PTE *pg);
 void page_lock(struct PTE *pg);
 void page_unlock(struct PTE *pg);
@@ -90,7 +92,7 @@ void free_page(vaddr_t addr);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);
-void vm_tlbshootdown(vaddr_t va);
+void vm_tlbshootdown(vaddr_t va, int);
 
 
 #endif /* _VM_H_ */

@@ -19,6 +19,8 @@
 #include <kern/fcntl.h>
 #include <bitmap.h>
 #include <synch.h>
+#include <cpu.h>
+
 DEFARRAY_BYTYPE(pagetable_array, struct PTE, );
 #define DUMBVM_STACKPAGES    12
 
@@ -38,7 +40,7 @@ static paddr_t ROUNDDOWN(paddr_t size)
 	}
 	return size;
 }
-static int get_ind_coremap(paddr_t paddr)
+int get_ind_coremap(paddr_t paddr)
 {
 	int i=(paddr-freeaddr)/PAGE_SIZE;
 	if(i>last_index || i<0){
@@ -247,13 +249,20 @@ static void getswapstats(){
 	}
 	//panic("SMAP IS NULL");
 }
+static void tlb_wait_and_shoot(){
+	wchan_lock(tlb_wchan);
+	spinlock_release(&coremap_lock);
+	wchan_sleep(tlb_wchan);
+	spinlock_acquire(&coremap_lock);
+}
+
 void
 vm_bootstrap(void)
 {
 	paddr_t first_addr, lastaddr;
 	ram_getsize(&first_addr, &lastaddr);
 
-//	tlb_wchan=wchan_create("TLB_WCHAN");
+	tlb_wchan=wchan_create("TLB_WCHAN");
 	page_wchan=wchan_create("PG_WCHAN");
 	biglock_paging=lock_create("biglock_paging");
 	getswapstats();
@@ -277,6 +286,8 @@ vm_bootstrap(void)
 		core_map[i].pstate=FREE;
 		core_map[i].page_ptr=NULL;
 		core_map[i].busy=0;
+		core_map[i].cpuid=0;
+		core_map[i].tlbind=-1;
 	}
 	if(last_index==0)
 		last_index=total_page_num;
@@ -469,7 +480,7 @@ static int flush_page(){
 static int make_page_available(int npages,int kernel){
 	if(npages>1) // Not necessary so far
 		panic("NOO PLS");
-
+	vaddr_t oldva;
 	evict_index=choose_victim();
 	struct PTE *victim_pg=core_map[evict_index].page_ptr;
 	KASSERT(evict_index>=0);
@@ -484,8 +495,24 @@ static int make_page_available(int npages,int kernel){
 
 	victim_pg->swapped=1;
 	vaddr_t sa=victim_pg->saddr;
+	oldva=victim_pg->vaddr;
+	//vm_tlbshootdown(evict_index, 1);
 
-	vm_tlbshootdown(victim_pg->vaddr);
+	if(core_map[evict_index].tlbind>=0){
+		if(core_map[evict_index].cpuid!=curcpu->c_number){
+			struct tlbshootdown ts;
+			ts.ts_addrspace=curthread->t_addrspace;
+			ts.ts_vaddr=oldva;
+			ipi_tlbshootdown(core_map[evict_index].cpuid, &ts);
+			while((int)core_map[evict_index].cpuid!=-1){
+				tlb_wait_and_shoot();
+			}
+		}
+		else
+		{
+			vm_tlbshootdown(evict_index, 1);
+		}
+	}
 	spinlock_release(&coremap_lock);
 	swapout(core_map[evict_index].paddr, sa);
 	spinlock_acquire(&coremap_lock);
@@ -613,8 +640,10 @@ free_page(paddr_t addr)
 	spinlock_acquire(&coremap_lock);
 	for(int j=i;j<i+core_map[i].npages;j++)
 	{
-		vm_tlbshootdown(PADDR_TO_KVADDR(core_map[j].paddr));
+		vm_tlbshootdown(j, 1);
 		core_map[j].pstate=FREE;
+		core_map[j].cpuid=0;
+		core_map[j].tlbind=-1;
 		/*if(clean==1){
 			//if(core_map[j].page_ptr!=NULL)
 				del_in_as(core_map[j].page_ptr->vaddr);
@@ -644,29 +673,29 @@ vm_tlbshootdown_all(void)
 }
 
 void
-vm_tlbshootdown(vaddr_t va)
+vm_tlbshootdown(vaddr_t va, int ind_or_not)
 {
-	//pa = pa | TLBLO_DIRTY | TLBLO_VALID;
 	uint32_t ehi, elo;
+	paddr_t pa;
 	int spl=splhigh(),i;
-	i=tlb_probe(va & PAGE_FRAME,0);
-	/*if(va==0x40000)
-	{
-//	kprintf("\nDeleting TLB entry %d",i);*/
+	if(ind_or_not==1)
+		i=va;
+	else
+		i=tlb_probe(va & PAGE_FRAME,0);
+
 	if(i==-1)
-	{
+		return;
 
-	for(i=0;i<NUM_TLB;i++)
-	{
-		tlb_read(&ehi, &elo, i);
-		if(ehi==va)
-			tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
+	tlb_read(&ehi, &elo, i);
 
-//		kprintf("\n%x?,%x,%x",va,ehi,elo);
-	}
-	//panic("AYA");
-	}
+	pa= elo & TLBLO_VALID; // check this
+	int ind=get_ind_coremap(pa);
+	KASSERT(ind>=0);
+	core_map[ind].tlbind=-1;
+	core_map[ind].cpuid=0;
+
 	tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
+
 	splx(spl);
 }
 /*
@@ -805,33 +834,47 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	/* make sure it's page-aligned */
 	KASSERT((paddr & PAGE_FRAME) == paddr);
-
+	spinlock_acquire(&coremap_lock);
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	uint32_t ehi, elo;
-	int spl = splhigh();
-	spinlock_acquire(&tlb_lock);
-	for (i=0; i<NUM_TLB; i++) {
-		tlb_read(&ehi, &elo, i);
-		if (elo & TLBLO_VALID) {
-			continue;
-		}
-		ehi = faultaddress;
-		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
-		tlb_write(ehi, elo, i);
-		page_unset_busy(paddr);
-		wchan_wakeall(page_wchan);
-		spinlock_release(&tlb_lock);
-		splx(spl);
-		return 0;
-	}
+	int spl = splhigh(), ti;
+
+	int ind=get_ind_coremap(paddr);
+	KASSERT(ind>=0);
+	ti=tlb_probe(faultaddress, 0);
 	ehi = faultaddress;
-	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-	tlb_random(ehi,elo);
-	//panic("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
-	page_unset_busy(paddr);
+	elo = paddr | TLBLO_VALID;
+	if(ti<0){
+			// INSERT INTO TLB FREE SLOT
+			for (i=0; i<NUM_TLB; i++) {
+				tlb_read(&ehi, &elo, i);
+				if (elo & TLBLO_VALID) {
+					continue;
+				}
+				ti=i;
+				core_map[ind].tlbind=ti;
+				core_map[ind].cpuid=curcpu->c_number;
+				break;
+			}
+			if(ti<0)
+			{
+				tlb_random(ehi, elo);
+				ti=tlb_probe(faultaddress, 0);
+				core_map[ind].tlbind=ti;
+				core_map[ind].cpuid=curcpu->c_number;
+				ti=-2;
+			}
+	}
+	if(ti>=0){
+	KASSERT(core_map[ind].tlbind==ti);
+	KASSERT(core_map[ind].cpuid==curcpu->c_number);
+	}
+	tlb_write(ehi, elo, ti);
+	core_map[ind].busy=0;
 	wchan_wakeall(page_wchan);
-	spinlock_release(&tlb_lock);
+	spinlock_release(&coremap_lock);
+	(void)tlb_lock;
 	splx(spl);
 	return 0;
+
 }

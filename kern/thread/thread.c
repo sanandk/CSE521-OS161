@@ -1246,10 +1246,10 @@ ipi_broadcast(int code)
 }
 
 void
-ipi_tlbshootdown(struct cpu *target, const struct tlbshootdown *mapping)
+ipi_tlbshootdown(int cpuid, const struct tlbshootdown *mapping)
 {
 	int n;
-
+	struct cpu *target=cpuarray_get(&allcpus, cpuid);
 	spinlock_acquire(&target->c_ipi_lock);
 
 	n = target->c_numshootdown;
@@ -1266,7 +1266,31 @@ ipi_tlbshootdown(struct cpu *target, const struct tlbshootdown *mapping)
 
 	spinlock_release(&target->c_ipi_lock);
 }
+void
+ipi_tlbshootdownbycid(const struct tlbshootdown *mapping)
+{
+	int n;
+	for(int i=0;i<(int)cpuarray_num(&allcpus);i++){
+		struct cpu *target=cpuarray_get(&allcpus, i);
+		spinlock_acquire(&target->c_ipi_lock);
 
+		n = target->c_numshootdown;
+		if (n == TLBSHOOTDOWN_MAX) {
+			target->c_numshootdown = TLBSHOOTDOWN_ALL;
+		}
+		else {
+			target->c_shootdown[n] = *mapping;
+			target->c_numshootdown = n+1;
+		}
+
+		target->c_ipi_pending |= (uint32_t)1 << IPI_TLBSHOOTDOWN;
+		mainbus_send_ipi(target);
+
+		spinlock_release(&target->c_ipi_lock);
+	}
+
+
+}
 void
 interprocessor_interrupt(void)
 {
@@ -1303,7 +1327,7 @@ interprocessor_interrupt(void)
 		}
 		else {
 			for (i=0; i<curcpu->c_numshootdown; i++) {
-				vm_tlbshootdown(curcpu->c_shootdown[i].ts_vaddr);
+				vm_tlbshootdown(curcpu->c_shootdown[i].ts_vaddr, 0);
 				panic("shootdown");
 			}
 		}

@@ -86,7 +86,7 @@ static void region_destroy(struct region *reg)
 	{
 		pg=pagetable_array_get(reg->pages,i);
 		if(pg!=NULL){
-			vm_tlbshootdown(PADDR_TO_KVADDR(pg->paddr));
+			vm_tlbshootdown(get_ind_coremap(pg->paddr), 1);
 			page_sneek(pg);
 			pa=pg->paddr;
 			if(pg->swapped==0){

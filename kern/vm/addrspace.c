@@ -238,12 +238,34 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	reg->as_perm=set_bit(executable,reg->as_perm, EXEC_BIT);
 
 	regions_array_add(as->regions, reg, NULL);
-
-	if(regions_array_num(as->regions)==2)
+	int num=regions_array_num(as->regions);
+	if(num==2)
 	{
 		as->heap_start=vaddr+(PAGE_SIZE);
 		as->heap_end=as->heap_start;
-		as_define_region(as, as->heap_start, PAGE_SIZE, 1,1,1);
+		struct region *heap=region_create(1);
+		if(heap==NULL){
+			return ENOMEM;
+		}
+		heap->as_npages=1;
+		heap->as_vbase=vaddr;
+		heap->as_perm=0;
+		heap->as_perm=set_bit(readable,reg->as_perm, READ_BIT);
+		heap->as_perm=set_bit(writeable,reg->as_perm, WRITE_BIT);
+		heap->as_perm=set_bit(executable,reg->as_perm, EXEC_BIT);
+		regions_array_add(as->regions, heap, NULL);
+
+		struct region *stack=region_create(DUMBVM_STACKPAGES);
+		if(stack==NULL){
+			return ENOMEM;
+		}
+		stack->as_npages=DUMBVM_STACKPAGES;
+		stack->as_vbase=USERSTACK-(DUMBVM_STACKPAGES*PAGE_SIZE);
+		stack->as_perm=0;
+		stack->as_perm=set_bit(readable,reg->as_perm, READ_BIT);
+		stack->as_perm=set_bit(writeable,reg->as_perm, WRITE_BIT);
+		stack->as_perm=set_bit(executable,reg->as_perm, EXEC_BIT);
+		regions_array_add(as->regions, stack, NULL);
 	}
 
 	return 0;
@@ -327,9 +349,8 @@ int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
 	*stackptr = USERSTACK;
-	//struct region *rg=regions_array_get(as->regions,1);
-
-	return as_define_region(as, USERSTACK-(DUMBVM_STACKPAGES*PAGE_SIZE), DUMBVM_STACKPAGES*PAGE_SIZE, 1,1,0);
+	(void)as;
+	return 0;
 }
 
 int page_create(struct PTE **ret, paddr_t *retpa)

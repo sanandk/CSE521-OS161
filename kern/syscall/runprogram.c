@@ -153,7 +153,6 @@ runprogram(char *progname, int argc, char **uargv)
 		enter_new_process(argc, (userptr_t)stackptr,
 				  stackptr, entrypoint);
 
-
 	
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");

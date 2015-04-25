@@ -678,21 +678,25 @@ vm_tlbshootdown(vaddr_t va, int ind_or_not)
 	uint32_t ehi, elo;
 	paddr_t pa;
 	int spl=splhigh(),i;
-	if(ind_or_not==1)
+	if(ind_or_not==1){
 		i=va;
+		core_map[i].tlbind=-1;
+		core_map[i].cpuid=0;
+	}
 	else
 		i=tlb_probe(va & PAGE_FRAME,0);
 
 	if(i==-1)
 		return;
 
+	if(ind_or_not==0){
 	tlb_read(&ehi, &elo, i);
-
 	pa= elo & TLBLO_VALID; // check this
 	int ind=get_ind_coremap(pa);
 	KASSERT(ind>=0);
 	core_map[ind].tlbind=-1;
 	core_map[ind].cpuid=0;
+	}
 
 	tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
 
@@ -857,8 +861,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 			if(ti<0)
 			{
-				ehi = faultaddress;
-				elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+				ehi = faultaddress & TLBHI_VPAGE;
+				elo = (paddr & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
 				tlb_random(ehi, elo);
 				ti=tlb_probe(faultaddress, 0);
 				core_map[ind].tlbind=ti;
@@ -868,11 +872,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 	if(ti>=0){
 	KASSERT(core_map[ind].tlbind==ti);
-	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
 	KASSERT(core_map[ind].cpuid==curcpu->c_number);
-	}
-	ehi = faultaddress;
+	ehi = faultaddress & TLBHI_VPAGE;
+	elo = (paddr & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
 	tlb_write(ehi, elo, ti);
+	tlb_read(&ehi, &elo, ti);
+	}
+
 	core_map[ind].busy=0;
 	wchan_wakeall(page_wchan);
 	spinlock_release(&coremap_lock);

@@ -49,7 +49,6 @@
 #include <cpu.h>
 #include <vm.h>
 
-
 /*
  * sys_getpid system call: get current process id
  */
@@ -401,10 +400,9 @@ sys___exit(int code)
 int
 sys___sbrk(int *ret, int amt)
 {
-	struct addrspace *heap=curthread->t_addrspace->heap;
-	struct PTE *temp=heap->pages;
+	struct region *heap=regions_array_get(curthread->t_addrspace->regions,2);
 	vaddr_t heap_start=curthread->t_addrspace->heap_start, heap_end=curthread->t_addrspace->heap_end;
-
+	struct PTE *temp;
 	if(amt==0){
 		*ret=heap_end;
 		return 0;
@@ -436,24 +434,21 @@ sys___sbrk(int *ret, int amt)
 				*ret=-1;
 				return EINVAL;
 			}
-			for(int i=0;i<(int)no;i++)
-			{
-				temp=heap->pages;
-				if(temp->next!=NULL)
+				int i=0;
+				for(int j=pagetable_array_num(heap->pages);j>=0;j--)
 				{
-					while(temp->next->next!=NULL){
-						temp=temp->next;
+					temp=pagetable_array_get(heap->pages, j);
+					page_set_busy(temp->paddr);
+					free_page(temp->paddr);
+					spinlock_cleanup(&temp->slock);
+					page_unset_busy(temp->paddr);
+
+					kfree(temp);
+
+					if(++i==(int)no){
+						break;
 					}
-
-					//page_set_busy(temp->next->paddr);
-					free_page(temp->next->paddr,1);
-					//page_unset_busy(temp->next->paddr);
-					spinlock_cleanup(&temp->next->slock);
-
-					kfree(temp->next);
-					temp->next=NULL;
 				}
-			}
 			heap->as_npages-=no;
 			*ret=heap_end;
 			heap_end-=amt;
@@ -484,40 +479,21 @@ sys___sbrk(int *ret, int amt)
 				*ret=-1;
 				return ENOMEM;
 			}
-			temp=heap->pages;
-			while(temp->next!=NULL){
-				temp=temp->next;
 
-			}/*
+			/*
 			int tot=count_free();
 			kprintf("\nFREE:%d",tot);*/
 			/*if(last_index<no){
 				*ret=-1;
 				return ENOMEM;
 			}*/
-			vaddr_t sa;
-			for(int i=0;i<no;i++)
-			{
-				struct PTE *pg=(struct PTE *)kmalloc(sizeof(struct PTE));
-				pg->next=NULL;
-				pg->perm=0;
-				pg->vaddr=temp->vaddr+PAGE_SIZE;
-				pg->paddr=alloc_page(pg);
-				bitmap_alloc(swap_map, &sa);
-				spinlock_init(&pg->slock);
-				if(lastsa==sa)
-						panic("pocha");
-				else
-						lastsa=sa;
-				pg->saddr=sa*PAGE_SIZE;
-				pg->swapped=0;
-				bzero((void *)PADDR_TO_KVADDR(pg->paddr), PAGE_SIZE);
-				if(pg->paddr==0)
-					return ENOMEM;
-				temp->next=pg;
 
-				temp=temp->next;
+			int i=pagetable_array_setsize(heap->pages, heap->as_npages+no);
+			KASSERT(i==0);
+			for(i=heap->as_npages;i<(int)heap->as_npages+no;i++){
+				pagetable_array_set(heap->pages, i, NULL);
 			}
+
 			heap->as_npages+=no;
 			*ret=heap_end;
 			heap_end+=oamt;

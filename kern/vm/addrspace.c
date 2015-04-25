@@ -30,6 +30,7 @@
 #include <types.h>
 #include <kern/errno.h>
 #include <lib.h>
+#include <array.h>
 #include <addrspace.h>
 #include <bitmap.h>
 #include <synch.h>
@@ -39,6 +40,9 @@
 #include <current.h>
 #include <mips/tlb.h>
 #include <vm.h>
+DEFARRAY_BYTYPE(regions_array, struct region,);
+
+
 #define DUMBVM_STACKPAGES    12
 // 9 - execute, 10 - write, 11 - read
 #define READ_BIT 11
@@ -47,6 +51,7 @@
 #define TEMP_READ_BIT 2
 #define TEMP_WRITE_BIT 1
 #define TEMP_EXEC_BIT 0
+
 
 /*
  * Set up a segment at virtual address VADDR of size MEMSIZE. The
@@ -61,60 +66,61 @@
 struct addrspace *
 as_create(void)
 {
-	/*struct addrspace *as = kmalloc(sizeof(struct regions));
+	struct addrspace *as = (struct addrspace*) kmalloc(sizeof(struct addrspace));
 	if (as==NULL) {
 		return NULL;
-	}*/
-	//as->pgdir=(struct PTE*)kmalloc(1024*sizeof(struct PTE));
-	struct addrspace *as = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-	as->pages=NULL;
-	as->as_vbase = 0;
-	as->as_pbase = 0;
-	as->as_npages = 0;
-	as->stack = NULL;
-	as->heap = NULL;
-	as->next=NULL;
+	}
+	as->regions=regions_array_create();
+	if(as->regions==NULL)
+	{
+		kfree(as);
+		return NULL;
+	}
 	return as;
 }
-
-static void destroy_pages(struct addrspace *temp)
+static void region_destroy(struct region *reg)
 {
-	struct PTE *ptemp=temp->pages, *del;
-	while(ptemp!=NULL){
-		page_set_busy(ptemp->paddr);
-		free_page(ptemp->paddr, 0);
-		page_unset_busy(ptemp->paddr);
-		spinlock_cleanup(&ptemp->slock);
-		del=ptemp;
-		ptemp=ptemp->next;
-		kfree(del);
-	}
-}
+	paddr_t pa;
+	struct PTE *pg;
+	for(int i=0;i<(int)pagetable_array_num(reg->pages);i++)
+	{
+		pg=pagetable_array_get(reg->pages,i);
+		if(pg!=NULL){
+			vm_tlbshootdown(PADDR_TO_KVADDR(pg->paddr));
+			page_sneek(pg);
+			pa=pg->paddr;
+			if(pg->swapped==0){
+				page_unlock(pg);
+				free_page(pa);
+				page_unset_busy(pa);
+			}
+			else
+				page_unlock(pg);
+		}
 
+		spinlock_cleanup(&pg->slock);
+		kfree(pg);
+	}
+	pagetable_array_setsize(reg->pages, 0);
+}
 void
 as_destroy(struct addrspace *as)
 {
-	struct addrspace *temp=as,*del;
-	destroy_pages(as->heap);
-	destroy_pages(as->stack);
-	//kfree(as->heap);
-	//kfree(as->stack);
-	while(temp!=NULL)
+	struct region *reg;
+
+	for(int i=0;i<(int)regions_array_num(as->regions);i++)
 	{
-			destroy_pages(temp);
-			//del=temp;
-			temp=temp->next;
-			//kfree(del);
+		reg=regions_array_get(as->regions, i);
+		region_destroy(reg);
 	}
-	(void)del;
-	//kfree(as);
+	regions_array_setsize(as->regions, 0);
+	regions_array_destroy(as->regions);
+	kfree(as);
 }
 
 void
 as_activate(struct addrspace *as)
 {
-
-
 	(void)as;
 		int i,spl;
 	/* Disable interrupts on this CPU while frobbing the TLB. */
@@ -188,11 +194,29 @@ static vaddr_t set_bit(int val, vaddr_t addr, int bit){
 	return addr;
 }
 
+static struct region* region_create(int npages){
+	struct region *reg;
+	reg= kmalloc(sizeof(struct region));
+	if(reg==NULL){
+		panic("Region cannot be created!");
+	}
+	reg->as_npages=npages;
+	reg->pages=pagetable_array_create();
+	KASSERT(reg->pages!=NULL);
+
+	int i=pagetable_array_setsize(reg->pages, npages);
+	KASSERT(i==0);
+	for(i=0;i<npages;i++){
+		pagetable_array_set(reg->pages, i, NULL);
+	}
+	return reg;
+}
+
 int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable)
 {
-	struct addrspace *temp,*reg;
+	struct region *reg;
 	size_t npages;
 	/* Align the region. First, the base... */
 	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
@@ -202,32 +226,27 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
 	npages = sz / PAGE_SIZE;
 
-	if(as==NULL || as->as_npages==0){
-		as->as_npages=npages;
-		as->as_vbase=vaddr;
-		as->as_perm=0;
-		as->as_perm=set_bit(readable,as->as_perm, READ_BIT);
-		as->as_perm=set_bit(writeable,as->as_perm, WRITE_BIT);
-		as->as_perm=set_bit(executable,as->as_perm, EXEC_BIT);
-		as->next=NULL;
-		as->pages=NULL;
+	reg=region_create(npages);
+	if(reg==NULL){
+		return ENOMEM;
 	}
-	else{
-		temp=as;
-		while(temp->next!=NULL)
-			temp=temp->next;
-		reg = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-		reg->as_npages=npages;
-		reg->as_vbase=vaddr;
-		reg->as_perm=0;
-		reg->as_perm=set_bit(readable,as->as_perm, READ_BIT);
-		reg->as_perm=set_bit(writeable,as->as_perm, WRITE_BIT);
-		reg->as_perm=set_bit(executable,as->as_perm, EXEC_BIT);
-		reg->pages=NULL;
-		reg->next=NULL;
-		temp->next=reg;
+	reg->as_npages=npages;
+	reg->as_vbase=vaddr;
+	reg->as_perm=0;
+	reg->as_perm=set_bit(readable,reg->as_perm, READ_BIT);
+	reg->as_perm=set_bit(writeable,reg->as_perm, WRITE_BIT);
+	reg->as_perm=set_bit(executable,reg->as_perm, EXEC_BIT);
+
+	regions_array_add(as->regions, reg, NULL);
+
+	if(regions_array_num(as->regions)==2)
+	{
+		as->heap_start=vaddr+(PAGE_SIZE);
+		as->heap_end=as->heap_start;
+		as_define_region(as, as->heap_start, PAGE_SIZE, 1,1,1);
 	}
-		return 0;
+
+	return 0;
 }
 /*
 static
@@ -286,160 +305,11 @@ static void revert_perm_temp(struct addrspace *as, paddr_t paddr){
 	return 0;
 }*/
 
-static int
-as_prepare_load_wrapper(struct addrspace *as, int pin)
-{
-	paddr_t pa;
-	int i;
-	vaddr_t va,sa;
-	struct addrspace *temp=as;
-	struct PTE *ptemp,*pg;
-	while(temp!=NULL)
-	{
-		va=temp->as_vbase;
-		for(i=0;i<(int)temp->as_npages;i++)
-		{
-			if(temp->pages==NULL){
-				temp->pages=(struct PTE *)kmalloc(sizeof(struct PTE));
-				temp->pages->next=NULL;
-				temp->pages->perm=temp->as_perm;
-				temp->pages->vaddr=va;
-				spinlock_init(&temp->pages->slock);
-				bitmap_alloc(swap_map, &sa);
-				/*if(lastsa==sa)
-						panic("pocha");
-					else*/
-						lastsa=sa;
-				temp->pages->saddr=sa*PAGE_SIZE;
-				temp->pages->swapped=0;
-				pa=alloc_page(temp->pages);
-				if(pa==0)
-					return ENOMEM;
-				as->as_pbase=pa;
-				temp->pages->paddr=pa;
-			}
-			else{
-				ptemp=temp->pages;
-				while(ptemp->next!=NULL)
-					ptemp=ptemp->next;
-				pg=(struct PTE *)kmalloc(sizeof(struct PTE));
-				pg->next=NULL;
-				pg->perm=as->as_perm;
-				pg->vaddr=va;
-				spinlock_init(&pg->slock);
-				bitmap_alloc(swap_map, &sa);
-				/*if(lastsa==sa)
-						panic("pocha");
-					else*/
-						lastsa=sa;
-				pg->saddr=sa*PAGE_SIZE;
-				pg->swapped=0;
-				pa=alloc_page(pg);
-				if(pa==0)
-					return ENOMEM;
-				pg->paddr=pa;
-				ptemp->next=pg;
-			}
-			bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
-			if(pin==0){
-				page_unset_busy(pa);
-			}
-			va+=PAGE_SIZE;
-		}
-		temp=temp->next;
-	}
-
-	as->heap = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-	as->heap->as_npages=1;
-	as->heap->as_vbase=va;
-	as->heap->as_perm=0;
-	as->heap->next=NULL;
-	as->heap->pages=(struct PTE *)kmalloc(sizeof(struct PTE));
-	as->heap->pages->next=NULL;
-	as->heap->pages->perm=0;
-	as->heap->pages->vaddr=va;
-	spinlock_init(&as->heap->pages->slock);
-	bitmap_alloc(swap_map, &sa);
-	/*if(lastsa==sa)
-		panic("pocha");
-	else*/
-		lastsa=sa;
-	as->heap->pages->saddr=sa*PAGE_SIZE;
-	as->heap->pages->swapped=0;
-	pa=alloc_page(as->heap->pages);
-	if(pa==0)
-		return ENOMEM;
-	as->heap->pages->paddr=pa;
-	as->heap_start=va;
-	as->heap_end=va;//+PAGE_SIZE;
-	if(pin==0)
-		page_unset_busy(pa);
-	vaddr_t s_va=USERSTACK-(DUMBVM_STACKPAGES*PAGE_SIZE);
-	as->stack = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-	as->stack->as_npages=DUMBVM_STACKPAGES;
-	as->stack->as_vbase=s_va;
-	as->stack->as_perm=0;
-	as->stack->next=NULL;
-	as->stack->pages=NULL;
-
-	for(int i=0;i<DUMBVM_STACKPAGES;i++)
-	{
-		if(as->stack->pages==NULL)
-		{
-			as->stack->pages=(struct PTE *)kmalloc(sizeof(struct PTE));
-			as->stack->pages->next=NULL;
-			as->stack->pages->perm=0;
-			as->stack->pages->vaddr=s_va;
-			spinlock_init(&as->stack->pages->slock);
-			bitmap_alloc(swap_map, &sa);
-			/*if(lastsa==sa)
-					panic("pocha");
-				else*/
-					lastsa=sa;
-			as->stack->pages->saddr=sa*PAGE_SIZE;
-			as->stack->pages->swapped=0;
-			pa=alloc_page(as->stack->pages);
-			if(pa==0)
-				return ENOMEM;
-			as->stack->pages->paddr=pa;
-		}
-		else
-		{
-			ptemp=as->stack->pages;
-			while(ptemp->next!=NULL)
-				ptemp=ptemp->next;
-			pg=(struct PTE *)kmalloc(sizeof(struct PTE));
-			pg->next=NULL;
-			pg->perm=0;
-			pg->vaddr=s_va;
-			spinlock_init(&pg->slock);
-			bitmap_alloc(swap_map, &sa);
-			/*if(lastsa==sa)
-					panic("pocha");
-				else*/
-					lastsa=sa;
-			pg->saddr=sa*PAGE_SIZE;
-			pg->swapped=0;
-			pa=alloc_page(pg);
-			if(pa==0)
-				return ENOMEM;
-			pg->paddr=pa;
-			ptemp->next=pg;
-		}
-		s_va+=PAGE_SIZE;
-		if(pin==0){
-			page_unset_busy(pa);
-		}
-
-	}
-
-	return 0;
-}
-
 int
 as_prepare_load(struct addrspace *as)
 {
-	return as_prepare_load_wrapper(as, 0);
+	(void)as;
+	return 0;
 }
 
 int
@@ -457,121 +327,107 @@ int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
 	*stackptr = USERSTACK;
-	(void)as;
+	//struct region *rg=regions_array_get(as->regions,1);
+
+	return as_define_region(as, USERSTACK-(DUMBVM_STACKPAGES*PAGE_SIZE), DUMBVM_STACKPAGES*PAGE_SIZE, 1,1,0);
+}
+
+int page_create(struct PTE **ret, paddr_t *retpa)
+{
+	paddr_t sa,pa;
+	struct PTE *pg=kmalloc(sizeof(struct PTE));
+	if(pg==NULL){
+		panic("Page not allocated: Out of memory");
+	}
+	spinlock_init(&pg->slock);
+	bitmap_alloc(swap_map, &sa);
+
+	pg->saddr=sa;
+	pa=alloc_page(pg);
+	KASSERT(pa!=0);
+
+	page_lock(pg);
+	pg->paddr=pa;
+	KASSERT(is_busy(pa));
+
+	*ret=pg;
+	*retpa=pa;
+
 	return 0;
 }
 
-static void copy_region(struct addrspace *newreg, struct addrspace *oldreg){
-		struct PTE *temp1=oldreg->pages,
-				*temp2=newreg->pages;
-		paddr_t temp_pa;
+static int page_copy(struct PTE *old, struct PTE **ret)
+{
+	struct PTE *new;
+	paddr_t oldpa, newpa,sa;
 
-		while(temp1!=NULL)
-		{
-			page_lock(temp2);
-			page_sneek(temp1);
+	page_create(&new, &newpa);
+	KASSERT(is_busy(newpa));
+	oldpa=old->paddr & PAGE_FRAME;
+	if(old->swapped==1){
+		sa=old->saddr;
+		page_unlock(old);
+		oldpa=alloc_page(old);
+		KASSERT(oldpa!=0);
+		KASSERT(is_busy(oldpa));
+		lock_acquire(biglock_paging);
+		swapin(oldpa, sa);
+		page_lock(old);
+		lock_release(biglock_paging);
+		old->paddr=oldpa;
+	}
+	KASSERT(is_busy(oldpa));
 
-			if(temp1->swapped==1)
-			{
-				page_unlock(temp1);
-				temp_pa=alloc_page(temp1);
-				KASSERT(temp_pa!=0);
-				KASSERT(is_busy(temp_pa)==1);
-				lock_acquire(biglock_paging);
-				swapin(temp_pa, temp1->saddr);
-				page_lock(temp1);
-				lock_release(biglock_paging);
-				KASSERT(temp1->swapped==1);
-				temp1->paddr=temp_pa;
-			}
-			KASSERT(temp1->paddr!=0);
-			KASSERT(temp2->paddr!=0);
-				memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
-								(const void *)PADDR_TO_KVADDR(temp1->paddr),
-								PAGE_SIZE);
-			page_unlock(temp1);
-			page_unlock(temp2);
-			page_unset_busy(temp2->paddr);
-			page_unset_busy(temp1->paddr);
-			temp1=temp1->next;
+	memmove((void *)PADDR_TO_KVADDR(newpa),
+			(const void *)PADDR_TO_KVADDR(oldpa),
+			PAGE_SIZE);
 
-			temp2=temp2->next;
+	page_unlock(old);
+	page_unlock(new);
+
+	page_unset_busy(newpa);
+	page_unset_busy(oldpa);
+	*ret=new;
+
+	return 0;
+}
+
+static int region_copy(struct region *old, struct region **ret)
+{
+	struct region *new;
+	struct PTE *newpg, *oldpg;
+
+	new=region_create(old->as_npages);
+	KASSERT(new!=NULL);
+	new->as_vbase=old->as_vbase;
+	for(int i=0;i<(int)old->as_npages;i++){
+		oldpg=pagetable_array_get(old->pages, i);
+		newpg=pagetable_array_get(new->pages, i);
+		KASSERT(newpg==NULL);
+		if(oldpg!=NULL){
+			page_copy(oldpg, &newpg);
 		}
-
+		pagetable_array_set(new->pages, i, newpg);
+	}
+	*ret=new;
+	return 0;
 }
 
 int
 as_copy(struct addrspace *old, struct addrspace **ret)
 {
 	struct addrspace *new;
+	struct region *reg, *nreg;
 	new = as_create();
 	if (new==NULL) {
 		return ENOMEM;
 	}
-
-	struct addrspace *otemp=old, *ntemp, *reg;
-	while(otemp!=NULL)
+	for(int i=0;i<(int)regions_array_num(old->regions);i++)
 	{
-		if(new==NULL || new->as_npages==0){
-				ntemp = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-				ntemp->as_npages=otemp->as_npages;
-				ntemp->pages=NULL;
-				ntemp->as_vbase=otemp->as_vbase;
-				ntemp->as_pbase=otemp->as_pbase;
-				ntemp->as_perm=otemp->as_perm;
-				ntemp->next=NULL;
-				new=ntemp;
-			}
-			else{
-				ntemp=new;
-				while(ntemp->next!=NULL)
-					ntemp=ntemp->next;
-				reg = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-				reg->as_npages=otemp->as_npages;
-				reg->as_vbase=otemp->as_vbase;
-				reg->as_pbase=otemp->as_pbase;
-				reg->pages=NULL;
-				reg->as_perm=otemp->as_perm;
-				reg->next=NULL;
-				ntemp->next=reg;
-			}
-		otemp=otemp->next;
+		reg=regions_array_get(old->regions,i);
+		region_copy(reg, &nreg);
+		regions_array_add(new->regions, nreg, NULL);
 	}
-
-	new->heap = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-	new->heap->as_npages=old->heap->as_npages;
-	new->heap->as_vbase=old->heap->as_vbase;
-	new->heap->as_perm=old->heap->as_perm;
-	new->heap->next=NULL;
-	new->heap->pages=NULL;
-
-	new->stack = (struct addrspace*) kmalloc(sizeof(struct addrspace));
-	new->stack->as_npages=old->stack->as_npages;
-	new->stack->as_vbase=old->stack->as_vbase;
-	new->stack->as_perm=old->stack->as_perm;
-	new->stack->next=NULL;
-	new->stack->pages=NULL;
-
-
-	/* (Mis)use as_prepare_load to allocate some physical memory. */
-
-	if (as_prepare_load_wrapper(new, 1)) {
-		as_destroy(new);
-		return ENOMEM;
-	}
-
-	otemp=old;
-	ntemp=new;
-	while(otemp!=NULL)
-	{
-		copy_region(ntemp, otemp);
-
-		otemp=otemp->next;
-		ntemp=ntemp->next;
-	}
-	copy_region(new->stack, old->stack);
-	copy_region(new->heap, old->heap);
-
 	*ret = new;
 	return 0;
 }

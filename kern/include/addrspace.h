@@ -34,12 +34,13 @@
  * Address space structure and operations.
  */
 
+#include <lib.h>
+#include <array.h>
 #include <spinlock.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
 struct vnode;
-
 struct PTE{
    vaddr_t vaddr;
    paddr_t paddr;
@@ -47,18 +48,23 @@ struct PTE{
    int swapped;
    int perm;
    struct spinlock slock;
-   struct PTE *next;
 };
 
-struct addrspace{
-    vaddr_t as_vbase, heap_end, heap_start;
-	paddr_t as_pbase;
+DECLARRAY_BYTYPE(pagetable_array, struct PTE);
+
+struct region{
+    vaddr_t as_vbase;
 	size_t as_npages;
 	int as_perm;
-	struct PTE *pages;
-	struct addrspace *next;
-	struct addrspace *heap, *stack;
+	struct pagetable_array *pages;
+};
 
+DECLARRAY_BYTYPE(regions_array, struct region);
+
+
+struct addrspace{
+	vaddr_t heap_end, heap_start;
+	struct regions_array *regions;
 };
 
 /* 
@@ -117,7 +123,7 @@ struct addrspace {
  *                (Normally called *after* as_complete_load().) Hands
  *                back the initial stack pointer for the new process.
  */
-
+int page_create(struct PTE **ret, paddr_t *retpa);
 struct addrspace *as_create(void);
 int               as_copy(struct addrspace *src, struct addrspace **ret);
 void              as_activate(struct addrspace *);

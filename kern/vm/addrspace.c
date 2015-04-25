@@ -484,6 +484,8 @@ static void copy_region(struct addrspace *newreg, struct addrspace *oldreg){
 				KASSERT(temp1->swapped==1);
 				temp1->paddr=temp_pa;
 			}
+			KASSERT(temp1->paddr!=0);
+			KASSERT(temp2->paddr!=0);
 				memmove((void *)PADDR_TO_KVADDR(temp2->paddr),
 								(const void *)PADDR_TO_KVADDR(temp1->paddr),
 								PAGE_SIZE);

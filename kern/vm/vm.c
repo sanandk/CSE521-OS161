@@ -86,7 +86,7 @@ static struct PTE* find_in_as(vaddr_t va){
 	}
 	return pg;
 }
-static void delete_page(struct PTE *dpage, struct addrspace *as){
+/*static void delete_page(struct PTE *dpage, struct addrspace *as){
 	struct PTE *temp=as->pages;
 	if(temp==dpage)
 	{
@@ -135,7 +135,7 @@ static void del_in_as(vaddr_t va){
 		it++;
 		goto try;
 	}
-}
+}*/
 /*static struct PTE* pfind_in_as(paddr_t va){
 	struct PTE *pg=NULL;
 	struct addrspace *as=curthread->t_addrspace,*temp;
@@ -629,12 +629,13 @@ free_page(paddr_t addr, int clean)
 	{
 		vm_tlbshootdown(PADDR_TO_KVADDR(core_map[j].paddr));
 		core_map[j].pstate=FREE;
-		if(clean==1){
-			if(core_map[j].page_ptr!=NULL)
+		/*if(clean==1){
+			//if(core_map[j].page_ptr!=NULL)
 				del_in_as(core_map[j].page_ptr->vaddr);
-		}
+		}*/
 		core_map[j].page_ptr=NULL;
 	}
+	(void)clean;
 	spinlock_release(&coremap_lock);
 }
 
@@ -782,7 +783,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		KASSERT(pg->swapped==1);
 		pg->paddr=paddr;
 		pg->swapped=0;
-		bzero((void *)PADDR_TO_KVADDR(paddr), PAGE_SIZE);
 	}
 	page_unlock(pg);
 	//KASSERT(is_busy(paddr));

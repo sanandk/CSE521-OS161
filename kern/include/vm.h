@@ -79,6 +79,8 @@ void swapout(paddr_t pa, vaddr_t sa);
 
 /* Initialization function */
 void vm_bootstrap(void);
+void tlb_shootbyind(int);
+void tlb_shootbyvaddr(vaddr_t vaddr);
 
 /* Fault handling function called by trap code */
 int vm_fault(int faulttype, vaddr_t faultaddress);
@@ -92,7 +94,7 @@ void free_page(vaddr_t addr);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);
-void vm_tlbshootdown(vaddr_t va, int);
+void vm_tlbshootdown(struct tlbshootdown *);
 
 
 #endif /* _VM_H_ */

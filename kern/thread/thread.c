@@ -1267,7 +1267,7 @@ ipi_tlbshootdown(int cpuid, const struct tlbshootdown *mapping)
 
 	spinlock_release(&target->c_ipi_lock);
 }
-void
+/*void
 ipi_tlbshootdownbycid(const struct tlbshootdown *mapping)
 {
 	int n;
@@ -1291,7 +1291,7 @@ ipi_tlbshootdownbycid(const struct tlbshootdown *mapping)
 	}
 
 
-}
+}*/
 void
 interprocessor_interrupt(void)
 {
@@ -1328,7 +1328,7 @@ interprocessor_interrupt(void)
 		}
 		else {
 			for (i=0; i<curcpu->c_numshootdown; i++) {
-				vm_tlbshootdown(curcpu->c_shootdown[i].ts_vaddr, 0);
+				vm_tlbshootdown(curcpu->c_shootdown);
 			}
 		}
 		curcpu->c_numshootdown = 0;

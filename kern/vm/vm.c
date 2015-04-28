@@ -25,7 +25,7 @@ DEFARRAY_BYTYPE(pagetable_array, struct PTE, );
 #define DUMBVM_STACKPAGES    12
 
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
-static struct spinlock tlb_lock = SPINLOCK_INITIALIZER;
+//static struct spinlock tlb_lock = SPINLOCK_INITIALIZER;
 static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
 
 static struct vnode *swap_vnode;
@@ -46,9 +46,6 @@ int get_ind_coremap(paddr_t paddr)
 	if(i>last_index || i<0){
 		return -1;
 	}
-	/*for(i=0;i<last_index;i++)
-			if(core_map[i].paddr==paddr)
-				return i;*/
 	return i;
 }
 static paddr_t get_addr_by_ind(int ind){
@@ -117,6 +114,36 @@ void page_sneek(struct PTE *pg){
 	}
 }
 
+void tlb_shootbyind(int ind){
+	uint32_t elo, ehi;
+	paddr_t pa;
+	int cind;
+	tlb_read(&ehi, &elo, ind);
+	if(elo & TLBLO_VALID){
+		pa=elo & TLBLO_PPAGE;
+		cind=get_ind_coremap(pa);
+		KASSERT(cind>=0);
+		core_map[cind].tlbind=-1;
+		core_map[cind].cpuid=0;
+	}
+	tlb_write(TLBHI_INVALID(ind), TLBLO_INVALID(), ind);
+}
+
+void tlb_shootbyvaddr(vaddr_t vaddr){
+	uint32_t elo, ehi;
+	KASSERT(vaddr<MIPS_KSEG0);
+	//spinlock_acquire(&coremap_lock);
+	int i=tlb_probe(vaddr & PAGE_FRAME, 0);
+	if(i!=-1)
+	{
+		tlb_read(&ehi, &elo, i);
+		KASSERT(elo & TLBLO_VALID); //not empty
+		tlb_shootbyind(i);
+	}
+	//spinlock_release(&coremap_lock);
+}
+
+
 static void getswapstats(){
 	struct stat st;
 	char *s=kstrdup("lhd0raw:");
@@ -130,16 +157,7 @@ static void getswapstats(){
 	total_swap=last_index*3;
 	swap_map=bitmap_create(total_swap);
 	lastsa=-1;
-	//swap_map=bitmap_create(last_index+last_index+last_index+(last_index/2));
-	/*swap_map=bitmap_create(2);
-	vaddr_t sa;
-	bitmap_alloc(swap_map, &sa);
-		kprintf("\ni=%x",sa);
-		bitmap_alloc(swap_map, &sa);
-			kprintf("\ni=%x",sa);
-			bitmap_alloc(swap_map, &sa);
-				kprintf("\ni=%x",sa);
-				panic("A");*/
+
 	while(swap_map==NULL)
 	{
 		total_swap-=last_index;
@@ -169,7 +187,7 @@ vm_bootstrap(void)
 	core_map = (struct coremap_page*)PADDR_TO_KVADDR(first_addr);
 	freeaddr = first_addr + (total_page_num * sizeof(struct coremap_page));
 	freeaddr=ROUNDDOWN(freeaddr);
-
+	KASSERT((freeaddr & PAGE_FRAME) == freeaddr);
 	kprintf("\n%d,%x,%x,%d\n",ROUNDDOWN(lastaddr-freeaddr) / PAGE_SIZE,freeaddr,lastaddr,total_page_num);
 
 	last_index=0;
@@ -397,20 +415,13 @@ static int make_page_available(int npages,int kernel){
 	if(npages>1) // Not necessary so far
 		panic("NOO, UNIMP");
 
-	//int dontswap=0;
-
 	vaddr_t oldva;
 	evict_index=choose_victim();
 	KASSERT(evict_index>=0);
 	struct PTE *victim_pg=core_map[evict_index].page_ptr;
 	KASSERT(core_map[evict_index].pstate==DIRTY);
 	KASSERT(core_map[evict_index].busy!=1);
-
-	if(victim_pg==NULL){
-
-		panic("vicpag is null: %d, %x",evict_index, (unsigned int)get_addr_by_ind(evict_index));
-		KASSERT(victim_pg!=NULL);
-	}
+	KASSERT(victim_pg!=NULL);
 
 	core_map[evict_index].busy=1;
 	core_map[evict_index].npages=npages;
@@ -419,8 +430,6 @@ static int make_page_available(int npages,int kernel){
 	else
 		core_map[evict_index].pstate=FIXED;
 
-	//if(dontswap==0)
-	{
 	victim_pg->swapped=1;
 	vaddr_t sa=victim_pg->saddr;
 	oldva=victim_pg->vaddr;
@@ -428,8 +437,8 @@ static int make_page_available(int npages,int kernel){
 	if(core_map[evict_index].tlbind>=0){
 		if(core_map[evict_index].cpuid!=curcpu->c_number){
 			struct tlbshootdown ts;
-			ts.ts_addrspace=curthread->t_addrspace;
-			ts.ts_vaddr=oldva;
+			ts.core_map_ind=evict_index;
+			ts.tlb_ind=core_map[evict_index].tlbind;
 			ipi_tlbshootdown(core_map[evict_index].cpuid, &ts);
 			while((int)core_map[evict_index].cpuid!=-1){
 				tlb_wait_and_shoot();
@@ -437,16 +446,17 @@ static int make_page_available(int npages,int kernel){
 		}
 		else
 		{
-			vm_tlbshootdown(evict_index, 1);
+			tlb_shootbyind(core_map[evict_index].tlbind);
 		}
 	}
-	spinlock_release(&coremap_lock);
+	core_map[evict_index].cpuid=0;
+	core_map[evict_index].tlbind=-1;
 
-	swapout(get_addr_by_ind(evict_index), sa);
+	spinlock_release(&coremap_lock);
+	swapout(get_addr_by_ind(evict_index) & PAGE_FRAME, sa);
 	spinlock_acquire(&coremap_lock);
-	}
+
 	core_map[evict_index].page_ptr=NULL;
-	core_map[evict_index].busy=0;
 	wchan_wakeall(page_wchan);
 
 	if(PADDR_TO_KVADDR(get_addr_by_ind(evict_index))<=USERSPACETOP){
@@ -463,20 +473,18 @@ paddr_t alloc_page(struct PTE *pg)
 	paddr_t pa;
 	int found=-1;
 
-	lock_acquire(biglock_paging);
+	if(curthread!=NULL && !curthread->t_in_interrupt)
+		lock_acquire(biglock_paging);
 	spinlock_acquire(&coremap_lock);
 
 	for(int i=0;i<last_index;i++)
 	{
-		//if(!(core_map[i].paddr>=freeaddr && core_map[i].paddr<lastaddr))
-			//	continue;
 		if(core_map[i].pstate==FREE && core_map[i].busy==0)
 		{
 			found=i;
 			break;
 		}
 	}
-
 
 	if (found==-1) {
 		found=make_page_available(1,0);
@@ -488,14 +496,13 @@ paddr_t alloc_page(struct PTE *pg)
 	core_map[found].busy=1;
 	core_map[found].page_ptr=pg;
 	pa=get_addr_by_ind(found);
-	/*if(pa<core_map[0].paddr){
-		panic("INVALID: %d page", found);
-	}*/
+
 	//KASSERT(pa>=core_map[0].paddr);
 
 	//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	spinlock_release(&coremap_lock);
-	lock_release(biglock_paging);
+	if(curthread!=NULL && !curthread->t_in_interrupt)
+		lock_release(biglock_paging);
 
 	return pa;
 }
@@ -523,7 +530,8 @@ alloc_kpages(int npages)
 		pa = getppages(npages);
 	else
 	{
-		lock_acquire(biglock_paging);
+		if(curthread!=NULL && !curthread->t_in_interrupt)
+			lock_acquire(biglock_paging);
 		spinlock_acquire(&coremap_lock);
 		int found=-1,start=-1;
 		for(int i=0;i<last_index;i++)
@@ -560,7 +568,8 @@ alloc_kpages(int npages)
 		}
 		pa=get_addr_by_ind(start);
 		spinlock_release(&coremap_lock);
-		lock_release(biglock_paging);
+		if(curthread!=NULL && !curthread->t_in_interrupt)
+			lock_release(biglock_paging);
 	}
 	return PADDR_TO_KVADDR(pa);
 }
@@ -575,11 +584,13 @@ free_page(paddr_t addr)
 	spinlock_acquire(&coremap_lock);
 	for(int j=i;j<i+core_map[i].npages;j++)
 	{
-		vm_tlbshootdown(j, 1);
+		if(core_map[j].tlbind>=0){
+			tlb_shootbyind(core_map[i].tlbind);
+			core_map[j].cpuid=0;
+			core_map[j].tlbind=-1;
+		}
 		core_map[j].pstate=FREE;
 		core_map[j].busy=0;
-		core_map[j].cpuid=0;
-		core_map[j].tlbind=-1;
 		core_map[j].page_ptr=NULL;
 	}
 	spinlock_release(&coremap_lock);
@@ -596,104 +607,64 @@ free_kpages(vaddr_t addr)
 void
 vm_tlbshootdown_all(void)
 {
-	int i, spl;
-	spl=splhigh();
+	int i;
+	spinlock_acquire(&coremap_lock);
 	for(i=0;i<NUM_TLB;i++)
-		tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
-
-	splx(spl);
+			tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
+	wchan_wakeall(tlb_wchan);
+	spinlock_release(&coremap_lock);
 }
+
 
 void
-vm_tlbshootdown(vaddr_t va, int ind_or_not)
+vm_tlbshootdown(struct tlbshootdown *ts)
 {
-	uint32_t ehi, elo;
-	paddr_t pa;
-	int spl=splhigh(),i;
-	if(ind_or_not==1){
-		i=va;
-		core_map[i].tlbind=-1;
-		core_map[i].cpuid=0;
+	spinlock_acquire(&coremap_lock);
+	int cind=ts->core_map_ind;
+	if(core_map[cind].tlbind==ts->tlb_ind && core_map[cind].cpuid==curcpu->c_number){
+		tlb_shootbyind(ts->tlb_ind);
+	}
+	wchan_wakeall(tlb_wchan);
+	spinlock_release(&coremap_lock);
+}
+
+static void insert_into_tlb(vaddr_t vaddr, paddr_t paddr){
+	uint32_t elo, ehi;
+	int i, cind, tlbind;
+	KASSERT(paddr>= freeaddr && paddr<lastaddr);
+	spinlock_acquire(&coremap_lock);
+	cind=get_ind_coremap(paddr);
+	KASSERT(cind>=0);
+	tlbind=tlb_probe(vaddr & PAGE_FRAME, 0);
+	if(tlbind<0){
+		// INSERT INTO TLB FREE SLOT
+		for (i=0; i<NUM_TLB; i++) {
+			tlb_read(&ehi, &elo, i);
+			if (elo & TLBLO_VALID) {
+				continue;
+			}
+			tlbind=i;
+			break;
+		}
+	}
+	ehi = vaddr & TLBHI_VPAGE;
+	elo = (paddr & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
+
+	if(tlbind<0){
+		tlb_random(ehi, elo);
+		tlbind=tlb_probe(vaddr & PAGE_FRAME, 0);
 	}
 	else
-		i=tlb_probe(va & TLBHI_VPAGE, 0);
-//		i=tlb_probe(va & PAGE_FRAME,0);
+		tlb_write(ehi, elo, tlbind);
 
-	if(i==-1){
-		splx(spl);
-		return;
-	}
+	core_map[cind].tlbind=tlbind;
+	core_map[cind].cpuid=curcpu->c_number;
+	core_map[cind].busy=0;
 
-	if(ind_or_not==0){
-	tlb_read(&ehi, &elo, i);
-	pa= elo & TLBLO_VALID; // check this
-	int ind=get_ind_coremap(pa);
-	KASSERT(ind>=0);
-	core_map[ind].tlbind=-1;
-	core_map[ind].cpuid=0;
-	}
-
-	tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
-
-	splx(spl);
-}
-/*
-static vaddr_t getfirst10(vaddr_t addr){
-
-	//unsigned int myuint32=0xADADADAD;
-	unsigned int highest_10_bits = (addr & (0x1FFFF << (32 - 10))) >> (32 - 10);
-	//unsigned int highest_20_bits = (addr & (0x1FFFF << (32 - 20))) >> (32 - 20);
-	//unsigned int second_10_bits = (highest_20_bits & (0x3FF));
-	return highest_10_bits;
-	//printf("\n%d,%d",highest_10_bits,second_10_bits);
+	wchan_wakeall(page_wchan);
+	spinlock_release(&coremap_lock);
 }
 
-static vaddr_t getsecond10(vaddr_t addr){
-
-	//unsigned int myuint32=0xADADADAD;
-	unsigned int highest_20_bits = (addr & (0x1FFFF << (32 - 20))) >> (32 - 20);
-	unsigned int second_10_bits = (highest_20_bits & (0x3FF));
-	return second_10_bits;
-	//printf("\n%d,%d",highest_10_bits,second_10_bits);
-}*/
-
-
-
-
-/*static struct PTE* init_fault(vaddr_t faultaddress){
-	struct addrspace *curspace=curthread->t_addrspace,*as=curspace;
-	vaddr_t base,top,sa;
-
-	//Check regions
-	while(as!=NULL){
-		base=as->as_vbase;
-		if(as->next!=NULL)
-			top=as->next->as_vbase;
-		else
-			top=curspace->heap_start;
-
-		if((unsigned int)faultaddress>=(unsigned int)base && (unsigned int)faultaddress<(unsigned int)top)
-				break;
-		as=as->next;
-	}
-
-	struct PTE *pg=(struct PTE *)kmalloc(sizeof(struct PTE));
-	pg->next=NULL;
-	pg->perm=0;
-	pg->vaddr=faultaddress;
-	spinlock_init(&pg->slock);
-	bitmap_alloc(swap_map, &sa);
-	lastsa=sa;
-	pg->saddr=sa*PAGE_SIZE;
-	pg->swapped=0;
-	pg->paddr=alloc_page(pg);
-	struct PTE *ptable=as->pages;
-	while(ptable->next!=NULL)
-		ptable=ptable->next;
-	ptable->next=pg;
-	page_unset_busy(pg->paddr);
-	return pg;
-}*/
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
@@ -722,16 +693,17 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if(pg==NULL)
 	{
 		page_create(&pg, &paddr);
+		pg->paddr=paddr;
 		pg->vaddr=faultaddress;
 		page_unlock(pg);
 		ind=get_ind_coremap(paddr);
 		bzero((void *)PADDR_TO_KVADDR(paddr), PAGE_SIZE);
-		KASSERT(is_busy(paddr));
+		//KASSERT(is_busy(paddr));
 		page_unset_busy(paddr);
 		pagetable_array_set(freg->pages, (faultaddress-base)/PAGE_SIZE, pg);
 	}
 	page_sneek(pg);
-	paddr=pg->paddr;
+	paddr=pg->paddr & PAGE_FRAME;
 	ind=get_ind_coremap(paddr);
 
 	if(pg->swapped==1)
@@ -761,70 +733,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return EINVAL;
 	}
 
-	/*int ind=getfirst10(faultaddress);
-	if(as->pgdir[ind].pg_table==NULL){
-		as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
-		paddr=KVADDR_TO_PADDR(faultaddress);
-		as->pgdir[ind].pg_table[getsecond10(faultaddress)]=paddr;
-	}
-	else{
-		paddr=as->pgdir[ind].pg_table[getsecond10(faultaddress)];
-		paddr=(faultaddress-PADDR_TO_KVADDR(paddr))+paddr;
-	}
-
-*/
 
 	/* make sure it's page-aligned */
 	KASSERT((paddr & PAGE_FRAME) == paddr);
-	spinlock_acquire(&coremap_lock);
-	/* Disable interrupts on this CPU while frobbing the TLB. */
-	uint32_t ehi, elo;
-	int spl = splhigh(), ti;
-
-	KASSERT(ind>=0);
-	ti=tlb_probe(faultaddress & TLBHI_VPAGE, 0);
-
-	if(ti<0){
-			// INSERT INTO TLB FREE SLOT
-			for (i=0; i<NUM_TLB; i++) {
-				tlb_read(&ehi, &elo, i);
-				if (elo & TLBLO_VALID) {
-					continue;
-				}
-				ti=i;
-				core_map[ind].tlbind=ti;
-				core_map[ind].page_ptr=pg;
-				core_map[ind].cpuid=curcpu->c_number;
-				break;
-			}
-			if(ti<0)
-			{
-				ehi = faultaddress & TLBHI_VPAGE;
-				elo = (paddr & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
-				tlb_random(ehi, elo);
-				ti=tlb_probe(faultaddress & TLBHI_VPAGE, 0);
-				core_map[ind].tlbind=ti;
-				core_map[ind].page_ptr=pg;
-				core_map[ind].cpuid=curcpu->c_number;
-				ti=-2;
-			}
-	}
-	if(ti>=0){
-	KASSERT(core_map[ind].tlbind==ti);
-	KASSERT(core_map[ind].cpuid==curcpu->c_number);
-	ehi = faultaddress & TLBHI_VPAGE;
-	elo = (paddr & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
-	tlb_write(ehi, elo, ti);
-	tlb_read(&ehi, &elo, ti);
-	}
-
-	core_map[ind].busy=0;
-	wchan_wakeall(page_wchan);
-	spinlock_release(&coremap_lock);
-	(void)tlb_lock;
-	splx(spl);
-
-
+	insert_into_tlb(faultaddress, paddr);
 	return 0;
 
 }

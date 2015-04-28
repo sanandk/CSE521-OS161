@@ -43,7 +43,7 @@ static paddr_t ROUNDDOWN(paddr_t size)
 int get_ind_coremap(paddr_t paddr)
 {
 	int i=(paddr-freeaddr)/PAGE_SIZE;
-	if(i>=last_index || i<0){
+	if(i>last_index || i<0){
 		return -1;
 	}
 	/*for(i=0;i<last_index;i++)
@@ -51,111 +51,9 @@ int get_ind_coremap(paddr_t paddr)
 				return i;*/
 	return i;
 }
-/*static struct PTE *lookup_region(vaddr_t va, struct addrspace *as, int pa){
-	if(as==NULL)
-		return NULL;
-	struct PTE *temp=as->pages;
-	while(temp!=NULL){
-		if(pa==0)
-			if((unsigned int)va>=(unsigned int)temp->vaddr && (unsigned int)va<(unsigned int)temp->vaddr + PAGE_SIZE)
-				return temp;
-		if(pa==1)
-			if((unsigned int)va>=(unsigned int)temp->paddr && (unsigned int)va<(unsigned int)temp->paddr + PAGE_SIZE)
-				return temp;
-		temp=temp->next;
-	}
-	return NULL;
+static paddr_t get_addr_by_ind(int ind){
+	return (PAGE_SIZE*ind)+freeaddr;
 }
-static struct PTE* find_in_as(vaddr_t va){
-	struct PTE *pg=NULL;
-	struct addrspace *as=curthread->t_addrspace,*temp;
-	if(as==NULL)
-		return NULL;
-	int it=0;
-	try:
-	temp=as;
-	while(pg==NULL && temp!=NULL){
-		pg=lookup_region(va, temp,0);
-		temp=temp->next;
-	}
-	if(pg==NULL)
-		pg=lookup_region(va, as->stack,0);
-	if(pg==NULL)
-		pg=lookup_region(va, as->heap,0);
-	if(pg==NULL && it==0){
-		as=curthread->parent->t_addrspace;
-		it++;
-		goto try;
-	}
-	return pg;
-}*/
-/*static void delete_page(struct PTE *dpage, struct addrspace *as){
-	struct PTE *temp=as->pages;
-	if(temp==dpage)
-	{
-		as->pages=temp->next;
-		kfree(dpage);
-		return;
-	}
-	while(temp!=NULL)
-	{
-		if(temp->next==dpage)
-		{
-			temp->next=dpage->next;
-			kfree(dpage);
-			return;
-		}
-		temp=temp->next;
-	}
-}
-static void del_in_as(vaddr_t va){
-	struct PTE *pg=NULL;
-	struct addrspace *as=curthread->t_addrspace,*temp;
-	if(as==NULL)
-		return;
-	int it=0;
-	try:
-	temp=as;
-	while(pg==NULL && temp!=NULL){
-		pg=lookup_region(va, temp,0);
-		if(pg!=NULL)
-			delete_page(pg,temp);
-		temp=temp->next;
-	}
-	if(pg==NULL){
-		pg=lookup_region(va, as->stack,0);
-		if(pg!=NULL)
-			delete_page(pg,as->stack);
-	}
-	if(pg==NULL){
-		pg=lookup_region(va, as->heap,0);
-		if(pg!=NULL)
-			delete_page(pg,as->heap);
-	}
-
-	if(pg==NULL && it==0){
-		as=curthread->parent->t_addrspace;
-		it++;
-		goto try;
-	}
-}*/
-/*static struct PTE* pfind_in_as(paddr_t va){
-	struct PTE *pg=NULL;
-	struct addrspace *as=curthread->t_addrspace,*temp;
-	temp=as;
-	if(as==NULL)
-		panic("NULL");
-
-	while(pg==NULL && temp!=NULL){
-		pg=lookup_region(va, temp,1);
-		temp=temp->next;
-	}
-	if(pg==NULL)
-		pg=lookup_region(va, as->stack,1);
-	if(pg==NULL)
-		pg=lookup_region(va, as->heap,1);
-	return pg;
-}*/
 static void wait_for_busypage(){
 	wchan_lock(page_wchan);
 	spinlock_release(&coremap_lock);
@@ -272,7 +170,7 @@ vm_bootstrap(void)
 	freeaddr = first_addr + (total_page_num * sizeof(struct coremap_page));
 	freeaddr=ROUNDDOWN(freeaddr);
 
-	kprintf("\n%d,%x,%x,%d\n",ROUNDDOWN(lastaddr-freeaddr) / PAGE_SIZE,first_addr,lastaddr,total_page_num);
+	kprintf("\n%d,%x,%x,%d\n",ROUNDDOWN(lastaddr-freeaddr) / PAGE_SIZE,freeaddr,lastaddr,total_page_num);
 
 	last_index=0;
 	for(int i=0;i<total_page_num;i++)
@@ -281,7 +179,7 @@ vm_bootstrap(void)
 			last_index=i;
 			break;
 		}
-		core_map[i].paddr= (PAGE_SIZE*i) +freeaddr;
+		//core_map[i].paddr= (PAGE_SIZE*i) +freeaddr;
 		//kprintf("%x\t",core_map[i].paddr);
 		core_map[i].pstate=FREE;
 		core_map[i].page_ptr=NULL;
@@ -291,7 +189,7 @@ vm_bootstrap(void)
 	}
 	if(last_index==0)
 		last_index=total_page_num;
-	kprintf("%d,correct?%x,%x",last_index,core_map[last_index-1].paddr,lastaddr);
+	kprintf("%d,correct?%x,%x",last_index,lastaddr, (unsigned int)get_addr_by_ind(last_index-1));
 
 	evict_index=0;
 	vm_bootstrapped=1;
@@ -352,7 +250,9 @@ int count_free()
 		}
 	return cnt;
 }
-static int choose_victim(){
+/*Latest choose_victim
+ *
+ * static int choose_victim(){
 	int victim_ind=-1;
 	time_t aftersecs, secs;
 	uint32_t afternsecs, nsecs,nh=0;
@@ -360,8 +260,8 @@ static int choose_victim(){
 
 	for(int i=1;i<last_index;i++)
 	{
-		if(!(core_map[i].paddr>=freeaddr && core_map[i].paddr<lastaddr))
-			continue;
+		//if(!(core_map[i].paddr>=freeaddr && core_map[i].paddr<lastaddr))
+			//continue;
 		getinterval(core_map[i].beforesecs, core_map[i].beforensecs,
 					aftersecs, afternsecs,
 					&secs, &nsecs);
@@ -377,7 +277,20 @@ static int choose_victim(){
 	KASSERT(victim_ind>=0);
 	//kprintf("\n VICTIM IS %d",victim_ind);
 	return victim_ind;
+}*/
+
+  static int choose_victim(){
+	int victim_ind;
+  	while(1)
+	{
+	  victim_ind=random()%last_index;
+	  if(core_map[victim_ind].pstate==DIRTY && core_map[victim_ind].busy==0)
+		  return victim_ind;
+	}
+	//kprintf("\n VICTIM IS %d",victim_ind);
+	return -1;
 }
+
 
 /*static struct PTE *choose_victim()
 {
@@ -482,9 +395,9 @@ static int flush_page(){
 /* Sequential replacing */
 static int make_page_available(int npages,int kernel){
 	if(npages>1) // Not necessary so far
-		panic("NOO PLS");
+		panic("NOO, UNIMP");
 
-	int dontswap=0;
+	//int dontswap=0;
 
 	vaddr_t oldva;
 	evict_index=choose_victim();
@@ -495,7 +408,7 @@ static int make_page_available(int npages,int kernel){
 
 	if(victim_pg==NULL){
 
-		panic("vicpag is null: %d, %x",evict_index, (unsigned int)core_map[evict_index].paddr);
+		panic("vicpag is null: %d, %x",evict_index, (unsigned int)get_addr_by_ind(evict_index));
 		KASSERT(victim_pg!=NULL);
 	}
 
@@ -506,7 +419,8 @@ static int make_page_available(int npages,int kernel){
 	else
 		core_map[evict_index].pstate=FIXED;
 
-	if(dontswap==0){
+	//if(dontswap==0)
+	{
 	victim_pg->swapped=1;
 	vaddr_t sa=victim_pg->saddr;
 	oldva=victim_pg->vaddr;
@@ -528,20 +442,20 @@ static int make_page_available(int npages,int kernel){
 	}
 	spinlock_release(&coremap_lock);
 
-	swapout(core_map[evict_index].paddr, sa);
+	swapout(get_addr_by_ind(evict_index), sa);
 	spinlock_acquire(&coremap_lock);
 	}
 	core_map[evict_index].page_ptr=NULL;
 	core_map[evict_index].busy=0;
 	wchan_wakeall(page_wchan);
 
-	if(PADDR_TO_KVADDR(core_map[evict_index].paddr)<=USERSPACETOP){
+	if(PADDR_TO_KVADDR(get_addr_by_ind(evict_index))<=USERSPACETOP){
 		panic("WENT PAST THE USER STACK!");
 	}
 	return evict_index;
 }
 
-/* Allocate/free some kernel-space virtual pages */
+/* Allocate/free some virtual pages */
 paddr_t alloc_page(struct PTE *pg)
 {
 	KASSERT(pg!=NULL);
@@ -554,8 +468,8 @@ paddr_t alloc_page(struct PTE *pg)
 
 	for(int i=0;i<last_index;i++)
 	{
-		if(!(core_map[i].paddr>=freeaddr && core_map[i].paddr<lastaddr))
-				continue;
+		//if(!(core_map[i].paddr>=freeaddr && core_map[i].paddr<lastaddr))
+			//	continue;
 		if(core_map[i].pstate==FREE && core_map[i].busy==0)
 		{
 			found=i;
@@ -572,9 +486,8 @@ paddr_t alloc_page(struct PTE *pg)
 	core_map[found].pstate=DIRTY;
 	core_map[found].npages=1;
 	core_map[found].busy=1;
-	gettime(&core_map[found].beforesecs, &core_map[found].beforensecs);
 	core_map[found].page_ptr=pg;
-	pa=core_map[found].paddr;
+	pa=get_addr_by_ind(found);
 	/*if(pa<core_map[0].paddr){
 		panic("INVALID: %d page", found);
 	}*/
@@ -627,7 +540,6 @@ alloc_kpages(int npages)
 					core_map[j].busy=0;
 					core_map[j].page_ptr=NULL;
 					core_map[j].npages=npages;
-					gettime(&core_map[j].beforesecs, &core_map[j].beforensecs);
 					}
 					found=i;
 					break;
@@ -646,7 +558,7 @@ alloc_kpages(int npages)
 			core_map[found].page_ptr=NULL;
 			start=found;
 		}
-		pa=core_map[start].paddr;
+		pa=get_addr_by_ind(start);
 		spinlock_release(&coremap_lock);
 		lock_release(biglock_paging);
 	}
@@ -707,8 +619,10 @@ vm_tlbshootdown(vaddr_t va, int ind_or_not)
 		i=tlb_probe(va & TLBHI_VPAGE, 0);
 //		i=tlb_probe(va & PAGE_FRAME,0);
 
-	if(i==-1)
+	if(i==-1){
+		splx(spl);
 		return;
+	}
 
 	if(ind_or_not==0){
 	tlb_read(&ehi, &elo, i);

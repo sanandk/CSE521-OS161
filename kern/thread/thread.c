@@ -103,12 +103,13 @@ void
 thread_checkstack(struct thread *thread)
 {
 	if (thread->t_stack != NULL) {
-	/*	if(((uint32_t*)thread->t_stack)[0] != THREAD_STACK_MAGIC){
+		//if(((uint32_t*)thread->t_stack)[0] != THREAD_STACK_MAGIC)
+		{
 			((uint32_t*)thread->t_stack)[0] = THREAD_STACK_MAGIC;
 			((uint32_t*)thread->t_stack)[1] = THREAD_STACK_MAGIC;
 			((uint32_t*)thread->t_stack)[2] = THREAD_STACK_MAGIC;
 			((uint32_t*)thread->t_stack)[3] = THREAD_STACK_MAGIC;
-		}*/
+		}
 		KASSERT(((uint32_t*)thread->t_stack)[0] == THREAD_STACK_MAGIC);
 		KASSERT(((uint32_t*)thread->t_stack)[1] == THREAD_STACK_MAGIC);
 		KASSERT(((uint32_t*)thread->t_stack)[2] == THREAD_STACK_MAGIC);
@@ -1328,7 +1329,6 @@ interprocessor_interrupt(void)
 		else {
 			for (i=0; i<curcpu->c_numshootdown; i++) {
 				vm_tlbshootdown(curcpu->c_shootdown[i].ts_vaddr, 0);
-				panic("shootdown");
 			}
 		}
 		curcpu->c_numshootdown = 0;

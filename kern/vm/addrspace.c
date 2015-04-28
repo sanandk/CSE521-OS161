@@ -363,6 +363,7 @@ int page_create(struct PTE **ret, paddr_t *retpa)
 	bitmap_alloc(swap_map, &sa);
 
 	pg->saddr=sa;
+	pg->swapped=0;
 	pa=alloc_page(pg);
 	KASSERT(pa!=0);
 

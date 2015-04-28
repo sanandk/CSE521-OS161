@@ -51,7 +51,7 @@ struct bitmap *swap_map;
 struct lock *biglock_paging;
 struct coremap_page {
 	struct PTE *page_ptr;
-    paddr_t paddr;
+    //paddr_t paddr;
     /* page state */
     enum page_state_t pstate;
 
@@ -61,8 +61,8 @@ struct coremap_page {
     unsigned cpuid;
 
     /* other info for paging algorithm  */
-	time_t beforesecs;
-	uint32_t beforensecs;
+	//time_t beforesecs;
+	//uint32_t beforensecs;
 };
 
 int evict_index;

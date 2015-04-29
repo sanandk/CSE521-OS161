@@ -282,14 +282,16 @@ int count_free()
 }*/
 
 static int choose_victim(){
-	int victim_ind;
+	int victim_ind,rd;
   	while(1)
 	{
-	  victim_ind=random()%last_index;
+  		rd=random();
+	  victim_ind=rd%last_index;
 	  if(core_map[victim_ind].pstate==DIRTY && core_map[victim_ind].busy==0)
+	  {
 		  return victim_ind;
+	  }
 	}
-	//kprintf("\n VICTIM IS %d",victim_ind);
 	return -1;
 }
 
@@ -573,6 +575,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		pg->vaddr=faultaddress;
 		page_unlock(pg);
 		ind=get_ind_coremap(paddr);
+		core_map[ind].page_ptr=pg;
 		bzero((void *)PADDR_TO_KVADDR(paddr), PAGE_SIZE);
 		//KASSERT(is_busy(paddr));
 		page_unset_busy(paddr);
@@ -591,6 +594,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 		lock_acquire(biglock_paging);
 		swapin(paddr, sa);
+		pg->swapped=0;
 		page_lock(pg);
 		lock_release(biglock_paging);
 		pg->paddr=paddr & PAGE_FRAME;

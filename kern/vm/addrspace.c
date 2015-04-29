@@ -225,15 +225,17 @@ int page_create(struct PTE **ret, paddr_t *retpa)
 		panic("Page not allocated: Out of memory");
 	}
 	spinlock_init(&pg->slock);
+
 	pa=alloc_page(pg);
 
 //		int res=bitmap_alloc(swap_map, &sa);
 		//kprintf("\nAllocated %d sa=%d, %x",res, (int)sa, (unsigned int)pa);
-
+	spinlock_acquire(&swap_address_lock);
 	pg->saddr=lastsa*PAGE_SIZE;
 	lastsa++;
 	if(lastsa>=total_swap)
 		panic("SWAP OUT OF MEMORY!");
+	spinlock_release(&swap_address_lock);
 	pg->swapped=0;
 
 	KASSERT(pa!=0);

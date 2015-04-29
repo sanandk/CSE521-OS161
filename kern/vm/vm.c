@@ -123,7 +123,7 @@ void tlb_shootbyind(int ind){
 		cind=get_ind_coremap(pa);
 		KASSERT(cind>=0);
 		core_map[cind].tlbind=-1;
-		core_map[cind].cpuid=0;
+		core_map[cind].cpuid=-1;
 	}
 	tlb_write(TLBHI_INVALID(ind), TLBLO_INVALID(), ind);
 }
@@ -131,7 +131,7 @@ void tlb_shootbyind(int ind){
 void tlb_shootbyvaddr(vaddr_t vaddr){
 	uint32_t elo, ehi;
 	KASSERT(vaddr<MIPS_KSEG0);
-	//spinlock_acquire(&coremap_lock);
+	spinlock_acquire(&coremap_lock);
 	int i=tlb_probe(vaddr & PAGE_FRAME, 0);
 	if(i!=-1)
 	{
@@ -139,7 +139,7 @@ void tlb_shootbyvaddr(vaddr_t vaddr){
 		KASSERT(elo & TLBLO_VALID); //not empty
 		tlb_shootbyind(i);
 	}
-	//spinlock_release(&coremap_lock);
+	spinlock_release(&coremap_lock);
 }
 
 static void tlb_wait_and_shoot(){
@@ -160,6 +160,7 @@ static void get_swap_ready(){
 	kprintf("\nSWAP MEM: %lu bytes, %d pages\n",(unsigned long)st.st_size,total_swap);
 	//total_swap=last_index*3;
 	lastsa=0;
+	spinlock_init(&swap_address_lock);
 	/*swap_map=bitmap_create(total_swap);
 
 
@@ -201,7 +202,7 @@ vm_bootstrap(void)
 		core_map[i].pstate=FREE;
 		core_map[i].page_ptr=NULL;
 		core_map[i].busy=0;
-		core_map[i].cpuid=0;
+		core_map[i].cpuid=-1;
 		core_map[i].tlbind=-1;
 	}
 	if(last_index==0)
@@ -287,7 +288,7 @@ static int choose_victim(){
 	{
 		rd=random();
 	  victim_ind=rd%last_index;
-	  if(core_map[victim_ind].pstate==DIRTY && core_map[victim_ind].busy==0)
+	  if((core_map[victim_ind].pstate==DIRTY || core_map[victim_ind].pstate==CLEAN) && core_map[victim_ind].busy==0)
 	  {
 		  return victim_ind;
 	  }
@@ -303,16 +304,12 @@ static int make_page_available(int npages,int kernel){
 	evict_index=choose_victim();
 	KASSERT(evict_index>=0);
 	struct PTE *victim_pg=core_map[evict_index].page_ptr;
-	KASSERT(core_map[evict_index].pstate==DIRTY);
+	KASSERT(core_map[evict_index].pstate==DIRTY || core_map[evict_index].pstate==CLEAN);
 	KASSERT(core_map[evict_index].busy!=1);
 	KASSERT(victim_pg!=NULL);
 
 	core_map[evict_index].busy=1;
 	core_map[evict_index].npages=npages;
-	if(kernel==0)
-		core_map[evict_index].pstate=DIRTY;
-	else
-		core_map[evict_index].pstate=FIXED;
 
 	victim_pg->swapped=1;
 	vaddr_t sa=victim_pg->saddr;
@@ -324,7 +321,7 @@ static int make_page_available(int npages,int kernel){
 			ts.core_map_ind=evict_index;
 			ts.tlb_ind=core_map[evict_index].tlbind;
 			ipi_tlbshootdown(core_map[evict_index].cpuid, &ts);
-			while((int)core_map[evict_index].cpuid!=-1){
+			while((int)core_map[evict_index].cpuid==-1){
 				tlb_wait_and_shoot();
 			}
 		}
@@ -333,11 +330,21 @@ static int make_page_available(int npages,int kernel){
 			tlb_shootbyind(core_map[evict_index].tlbind);
 		}
 	}
-	core_map[evict_index].cpuid=0;
+	core_map[evict_index].cpuid=-1;
 	core_map[evict_index].tlbind=-1;
 
 	spinlock_release(&coremap_lock);
-	swapout(get_addr_by_ind(evict_index) & PAGE_FRAME, sa);
+	// Evict
+
+
+	if(core_map[evict_index].pstate==DIRTY)
+	{
+		swapout(get_addr_by_ind(evict_index) & PAGE_FRAME, sa);
+		core_map[evict_index].pstate=CLEAN;
+	}
+	if(kernel==1)
+			core_map[evict_index].pstate=FIXED;
+
 	spinlock_acquire(&coremap_lock);
 
 	core_map[evict_index].page_ptr=NULL;
@@ -356,9 +363,10 @@ paddr_t alloc_page(struct PTE *pg)
 	KASSERT(curthread!=NULL);
 	paddr_t pa;
 	int found=-1;
-
-	if(curthread!=NULL && !curthread->t_in_interrupt)
+	if(curthread!=NULL && !curthread->t_in_interrupt){
 		lock_acquire(biglock_paging);
+
+	}
 	spinlock_acquire(&coremap_lock);
 
 	for(int i=0;i<last_index;i++)
@@ -464,7 +472,7 @@ free_page(paddr_t addr)
 	{
 		if(core_map[j].tlbind>=0){
 			tlb_shootbyind(core_map[i].tlbind);
-			core_map[j].cpuid=0;
+			core_map[j].cpuid=-1;
 			core_map[j].tlbind=-1;
 		}
 		core_map[j].pstate=FREE;
@@ -506,7 +514,7 @@ vm_tlbshootdown(struct tlbshootdown *ts)
 	spinlock_release(&coremap_lock);
 }
 
-static void insert_into_tlb(vaddr_t vaddr, paddr_t paddr){
+static void insert_into_tlb(vaddr_t vaddr, paddr_t paddr, int write_or_not){
 	uint32_t elo, ehi;
 	int i, cind, tlbind;
 	KASSERT(paddr>= freeaddr && paddr<lastaddr);
@@ -526,7 +534,9 @@ static void insert_into_tlb(vaddr_t vaddr, paddr_t paddr){
 		}
 	}
 	ehi = vaddr & TLBHI_VPAGE;
-	elo = (paddr & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
+	elo = (paddr & TLBLO_PPAGE) | TLBLO_VALID;
+	if(write_or_not==1)
+		elo|=TLBLO_DIRTY;
 
 	if(tlbind<0){
 		tlb_random(ehi, elo);
@@ -546,6 +556,7 @@ static void insert_into_tlb(vaddr_t vaddr, paddr_t paddr){
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
+
 	struct addrspace *as=curthread->t_addrspace;
 	int i,ind;
 	vaddr_t base, top,sa;
@@ -581,42 +592,40 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		page_unset_busy(paddr);
 		pagetable_array_set(freg->pages, (faultaddress-base)/PAGE_SIZE, pg);
 	}
-	page_sneek(pg);
-	paddr=pg->paddr & PAGE_FRAME;
-	ind=get_ind_coremap(paddr);
 
-	if(pg->swapped==1)
+	if(faulttype==VM_FAULT_READ || faulttype==VM_FAULT_WRITE)
 	{
-		sa=pg->saddr;
+		page_sneek(pg);
+		paddr=pg->paddr & PAGE_FRAME;
+		ind=get_ind_coremap(paddr);
+
+		if(pg->swapped==1)
+		{
+			sa=pg->saddr;
+			page_unlock(pg);
+			paddr=alloc_page(pg);
+			KASSERT(paddr!=0);
+
+			lock_acquire(biglock_paging);
+			swapin(paddr, sa);
+			pg->swapped=0;
+			page_lock(pg);
+			lock_release(biglock_paging);
+			pg->paddr=paddr & PAGE_FRAME;
+		}
 		page_unlock(pg);
-		paddr=alloc_page(pg);
-		KASSERT(paddr!=0);
-
-		lock_acquire(biglock_paging);
-		swapin(paddr, sa);
-		pg->swapped=0;
-		page_lock(pg);
-		lock_release(biglock_paging);
-		pg->paddr=paddr & PAGE_FRAME;
+		/* make sure it's page-aligned */
+		KASSERT((paddr & PAGE_FRAME) == paddr);
+		insert_into_tlb(faultaddress, paddr, (core_map[ind].pstate==DIRTY)?1:0);
 	}
-	page_unlock(pg);
-
-
-	switch (faulttype) {
-	    case VM_FAULT_READONLY:
-		/* We always create pages read-write, so we can't get this */
-		panic("dumbvm: got VM_FAULT_READONLY\n");
-	    case VM_FAULT_READ:
-	    case VM_FAULT_WRITE:
-		break;
-	    default:
-		return EINVAL;
+	else
+	{
+		page_sneek(pg);
+		paddr=pg->paddr;
+		page_unlock(pg);
+		tlb_shootbyvaddr(faultaddress);
+		insert_into_tlb(faultaddress, paddr, 1);
 	}
 
-
-	/* make sure it's page-aligned */
-	KASSERT((paddr & PAGE_FRAME) == paddr);
-	insert_into_tlb(faultaddress, paddr);
 	return 0;
-
 }

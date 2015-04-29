@@ -143,11 +143,16 @@ void tlb_shootbyvaddr(vaddr_t vaddr){
 	//spinlock_release(&coremap_lock);
 }
 
+static void tlb_wait_and_shoot(){
+	wchan_lock(tlb_wchan);
+	spinlock_release(&coremap_lock);
+	wchan_sleep(tlb_wchan);
+	spinlock_acquire(&coremap_lock);
+}
 
-static void getswapstats(){
+static void get_swap_ready(){
 	struct stat st;
 	char *s=kstrdup("lhd0raw:");
-	//struct coremap_page *core_map_file;
 	int err=vfs_open(s,O_RDWR,0,&swap_vnode);
 	if(err!=0)
 			kprintf("VFS_ERROR:%d!",err);
@@ -165,12 +170,6 @@ static void getswapstats(){
 	}
 	//panic("SMAP IS NULL");
 }
-static void tlb_wait_and_shoot(){
-	wchan_lock(tlb_wchan);
-	spinlock_release(&coremap_lock);
-	wchan_sleep(tlb_wchan);
-	spinlock_acquire(&coremap_lock);
-}
 
 void
 vm_bootstrap(void)
@@ -181,7 +180,7 @@ vm_bootstrap(void)
 	tlb_wchan=wchan_create("TLB_WCHAN");
 	page_wchan=wchan_create("PG_WCHAN");
 	biglock_paging=lock_create("biglock_paging");
-	getswapstats();
+	get_swap_ready();
 	int total_page_num = (lastaddr-first_addr) / PAGE_SIZE;
 	/* pages should be a kernel virtual address !!  */
 	core_map = (struct coremap_page*)PADDR_TO_KVADDR(first_addr);
@@ -215,46 +214,28 @@ vm_bootstrap(void)
 }
 
 static void access_swap(paddr_t pa, vaddr_t sa, enum uio_rw mode){
-	//kprintf("\naccess_entered\n");
+
 	int result;
 	struct iovec iov;
 	struct uio ku;
 	vaddr_t va=PADDR_TO_KVADDR(pa);
-	/*
-	bitmap_alloc(swap_map, &index);
-	kprintf("\nAllocated Map index: %x",index);
-	bitmap_alloc(swap_map, &index);
-	kprintf("\nAllocated Map index: %x",index);
-*/
+
 	uio_kinit(&iov, &ku, (char *)va, PAGE_SIZE, sa, mode);
-		/*iov.iov_ubase = (void *)s;
-		iov.iov_len = sizeof(s);		 // length of the memory space
-		ku.uio_iov = &iov;
-		ku.uio_iovcnt = 1;
-		ku.uio_resid = sizeof(s);          // amount to read from the file
-		ku.uio_offset = 0;
-		ku.uio_segflg = UIO_USERSPACE;
-		ku.uio_rw = UIO_WRITE;
-		ku.uio_space = curthread->t_addrspace;*/
+
 	if(mode==UIO_READ)
 		result=VOP_READ(swap_vnode,&ku);
 	else
 		result=VOP_WRITE(swap_vnode, &ku);
 	if (result) {
-//		kprintf("VOP_ops ERROR:%d",result);
+		panic("VOP_ops ERROR:%d",result);
 	}
-
-	//kprintf("\nDONE TO DISK!");
 }
 void swapin(paddr_t pa, vaddr_t sa){
-	//kprintf("\nswapin");
 	access_swap(pa, sa, UIO_READ);
 }
 void swapout(paddr_t pa, vaddr_t sa){
-	//kprintf("\nswapout");
 	access_swap(pa, sa, UIO_WRITE);
 }
-
 
 int count_free()
 {
@@ -268,6 +249,7 @@ int count_free()
 		}
 	return cnt;
 }
+
 /*Latest choose_victim
  *
  * static int choose_victim(){
@@ -297,7 +279,7 @@ int count_free()
 	return victim_ind;
 }*/
 
-  static int choose_victim(){
+static int choose_victim(){
 	int victim_ind;
   	while(1)
 	{
@@ -309,108 +291,6 @@ int count_free()
 	return -1;
 }
 
-
-/*static struct PTE *choose_victim()
-{
-	int i;
-	time_t aftersecs, secs;
-	uint32_t afternsecs, nsecs,nh=0;
-	struct addrspace* as=curthread->parent->t_addrspace;
-	struct PTE *pages, *victim_pg=NULL;
-	gettime(&aftersecs, &afternsecs);
-
-	if(as==NULL)
-		as=curthread->t_addrspace;
-
-	if(as->heap!=NULL)
-	{
-	pages=as->heap->pages;
-		while(pages!=NULL)
-		{
-			i=get_ind_coremap(pages->paddr);
-			getinterval(core_map[i].beforesecs, core_map[i].beforensecs,
-								aftersecs, afternsecs,
-								&secs, &nsecs);
-			nsecs=( secs*1000 ) + (nsecs/1000);
-			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
-			{
-				nh=nsecs;
-				victim_pg=pages;
-			}
-			pages=pages->next;
-		}
-	}
-	if(as->stack!=NULL)
-	{
-	pages=as->stack->pages;
-		while(pages!=NULL)
-		{
-			i=get_ind_coremap(pages->paddr);
-			getinterval(core_map[i].beforesecs, core_map[i].beforensecs,
-								aftersecs, afternsecs,
-								&secs, &nsecs);
-			nsecs=( secs*1000 ) + (nsecs/1000);
-			if(core_map[i].pstate!=FIXED && ((unsigned long)nh==0 || (unsigned long)nh<(unsigned long)nsecs))
-			{
-				nh=nsecs;
-				victim_pg=pages;
-			}
-			pages=pages->next;
-		}
-	}
-	KASSERT(victim_pg!=NULL);
-	return victim_pg;
-}*/
-/*static int make_page_available(int npages,int kernel){
-	if(npages>1)
-		panic("NOO PLS");
-
-	struct PTE *victim_pg=choose_victim();
-	victim_pg->swapped=1;
-	vaddr_t sa=victim_pg->saddr;
-	int vind=get_ind_coremap(victim_pg->paddr);
-	//kprintf("VIND=%d",vind);
-	if(last_index-vind<npages)
-		vind-=last_index-vind;
-
-	for(int i=vind;i<vind+npages;i++)
-	{
-		if(kernel==1)
-			core_map[i].pstate=FIXED;
-		else
-			core_map[i].pstate=DIRTY;
-		core_map[i].npages=npages;
-		time_t beforesecs=0;
-		uint32_t beforensecs=0;
-		gettime(&beforesecs, &beforensecs);
-		core_map[i].beforesecs=beforesecs;
-		core_map[i].beforensecs=beforensecs;
-
-		swapout(core_map[i].paddr, sa);
-		vm_tlbshootdown(victim_pg->vaddr);
-	}
-
-	if(core_map[vind].vaddr<=USERSPACETOP){
-		kprintf("%x,%x",core_map[vind].vaddr,USERSPACETOP);
-		panic("POCHE");
-	}
-	//bzero((void *)PADDR_TO_KVADDR(core_map[vind].paddr), PAGE_SIZE);
-	return core_map[vind].paddr;
-}*/
-	/*
-static int flush_page(){
-		core_map[victim_ind].pstate=DIRTY;
-		core_map[victim_ind].npages=1;
-		gettime(&core_map[victim_ind].beforesecs, &core_map[victim_ind].beforensecs);
-
-		found=victim_ind;
-		//flush_to_disk(curthread->t_addrspace);
-		//kprintf("\nFLUSHED");
-		//get_from_disk(curthread->t_addrspace->pid);
-
-}*/
-
-/* Sequential replacing */
 static int make_page_available(int npages,int kernel){
 	if(npages>1) // Not necessary so far
 		panic("NOO, UNIMP");
@@ -497,9 +377,6 @@ paddr_t alloc_page(struct PTE *pg)
 	core_map[found].page_ptr=pg;
 	pa=get_addr_by_ind(found);
 
-	//KASSERT(pa>=core_map[0].paddr);
-
-	//bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
 	spinlock_release(&coremap_lock);
 	if(curthread!=NULL && !curthread->t_in_interrupt)
 		lock_release(biglock_paging);
@@ -513,11 +390,8 @@ getppages(unsigned long npages)
 {
 	paddr_t addr;
 	spinlock_acquire(&stealmem_lock);
-	//spinlock_acquire(&stealmem_lock);
-
 	addr = ram_stealmem(npages);
 	spinlock_release(&stealmem_lock);
-	//spinlock_release(&stealmem_lock);
 	return addr;
 }
 

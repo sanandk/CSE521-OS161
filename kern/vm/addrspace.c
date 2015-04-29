@@ -44,14 +44,6 @@ DEFARRAY_BYTYPE(regions_array, struct region,);
 
 
 #define DUMBVM_STACKPAGES    12
-// 9 - execute, 10 - write, 11 - read
-#define READ_BIT 11
-#define WRITE_BIT 10
-#define EXEC_BIT 9
-#define TEMP_READ_BIT 2
-#define TEMP_WRITE_BIT 1
-#define TEMP_EXEC_BIT 0
-
 
 /*
  * Set up a segment at virtual address VADDR of size MEMSIZE. The
@@ -131,67 +123,6 @@ as_activate(struct addrspace *as)
 
 	splx(spl);
 }
-/*
-static vaddr_t getfirst10(vaddr_t addr){
-
-	//unsigned int myuint32=0xADADADAD;
-	unsigned int highest_10_bits = (addr & (0x1FFFF << (32 - 10))) >> (32 - 10);
-	//unsigned int highest_20_bits = (addr & (0x1FFFF << (32 - 20))) >> (32 - 20);
-	//unsigned int second_10_bits = (highest_20_bits & (0x3FF));
-	return highest_10_bits;
-	//printf("\n%d,%d",highest_10_bits,second_10_bits);
-}
-
-static vaddr_t getsecond10(vaddr_t addr){
-
-	//unsigned int myuint32=0xADADADAD;
-	unsigned int highest_20_bits = (addr & (0x1FFFF << (32 - 20))) >> (32 - 20);
-	unsigned int second_10_bits = (highest_20_bits & (0x3FF));
-	return second_10_bits;
-	//printf("\n%d,%d",highest_10_bits,second_10_bits);
-}
-
-static void gettemppermissions(int *a, vaddr_t addr){
-
-	unsigned int last_3 = (addr & (0x6F));
-	unsigned int first2 = (last_3 & (0x1FFFF << (3 - 2))) >> (3 - 2);
-	unsigned int first = (first2 & (0x1FFFF << (2 - 1))) >> (2 - 1);
-	unsigned int second = (first2 & (0x1));
-	unsigned int third = (last_3 & (0x1));
-	a[0]=first;
-	a[1]=second;
-	a[2]=third;
-}*/
-/*static paddr_t ROUNDDOWN(paddr_t size)
-{
-	if(size%PAGE_SIZE!=0)
-	{
-	size = ((size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE-1));
-	size-=PAGE_SIZE;
-	}
-	return size;
-}
-static void getpermissions(int *a, vaddr_t addr){
-	unsigned int last_12_bits = (addr & (0xFFF));
-	unsigned int final = (last_12_bits & (0x1FFFF << (12 - 3))) >> (12 - 3);
-	unsigned int first2 = (final & (0x1FFFF << (3 - 2))) >> (3 - 2);
-	unsigned int first = (first2 & (0x1FFFF << (2 - 1))) >> (2 - 1);
-	unsigned int second = (first2 & (0x1));
-	unsigned int third = (final & (0x1));
-	a[0]=first;
-	a[1]=second;
-	a[2]=third;
-}*/
-
-static vaddr_t set_bit(int val, vaddr_t addr, int bit){
-	// 9 - execute, 10 - write, 11 - read
-	///addr |= (1u << 9);	// set 1 in 9th bit from 0
-	if(val==1)
-		addr |= (1u << bit);
-	else
-		addr &= ~(1u << bit);
-	return addr;
-}
 
 static struct region* region_create(int npages){
 	struct region *reg;
@@ -215,6 +146,9 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable)
 {
+	(void)readable;
+	(void)writeable;
+	(void)executable;
 	struct region *reg;
 	size_t npages;
 	/* Align the region. First, the base... */
@@ -232,9 +166,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	reg->as_npages=npages;
 	reg->as_vbase=vaddr;
 	reg->as_perm=0;
-	reg->as_perm=set_bit(readable,reg->as_perm, READ_BIT);
-	reg->as_perm=set_bit(writeable,reg->as_perm, WRITE_BIT);
-	reg->as_perm=set_bit(executable,reg->as_perm, EXEC_BIT);
 
 	regions_array_add(as->regions, reg, NULL);
 	int num=regions_array_num(as->regions);
@@ -249,9 +180,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		heap->as_npages=1;
 		heap->as_vbase=vaddr;
 		heap->as_perm=0;
-		heap->as_perm=set_bit(readable,reg->as_perm, READ_BIT);
-		heap->as_perm=set_bit(writeable,reg->as_perm, WRITE_BIT);
-		heap->as_perm=set_bit(executable,reg->as_perm, EXEC_BIT);
 		regions_array_add(as->regions, heap, NULL);
 
 		struct region *stack=region_create(DUMBVM_STACKPAGES);
@@ -261,70 +189,11 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		stack->as_npages=DUMBVM_STACKPAGES;
 		stack->as_vbase=USERSTACK-(DUMBVM_STACKPAGES*PAGE_SIZE);
 		stack->as_perm=0;
-		stack->as_perm=set_bit(readable,reg->as_perm, READ_BIT);
-		stack->as_perm=set_bit(writeable,reg->as_perm, WRITE_BIT);
-		stack->as_perm=set_bit(executable,reg->as_perm, EXEC_BIT);
 		regions_array_add(as->regions, stack, NULL);
 	}
 
 	return 0;
 }
-/*
-static
-void
-as_zero_region(paddr_t paddr, unsigned npages)
-{
-	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
-}*/
-/*
-static void copy_perm_temp(struct addrspace *as, paddr_t paddr){
-	int a[3];
-	vaddr_t vaddr;
-	getpermissions(a, paddr);
-	paddr=set_bit(a[0],paddr,TEMP_READ_BIT);
-	paddr=set_bit(a[1],paddr,TEMP_WRITE_BIT);
-	paddr=set_bit(a[2],paddr,TEMP_EXEC_BIT);
-
-	paddr=set_bit(1,paddr, READ_BIT);
-	paddr=set_bit(1,paddr, WRITE_BIT);
-
-	vaddr=PADDR_TO_KVADDR(paddr);
-	int ind=getfirst10(vaddr);
-	if(as->pgdir[ind].pg_table==NULL)
-			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
-	as->pgdir[ind].pg_table[getsecond10(vaddr)]=paddr;
-}
-static void revert_perm_temp(struct addrspace *as, paddr_t paddr){
-	int a[3];
-	gettemppermissions(a, paddr);
-	paddr=set_bit(a[0],paddr,READ_BIT);
-	paddr=set_bit(a[1],paddr,WRITE_BIT);
-	paddr=set_bit(a[2],paddr,EXEC_BIT);
-
-	paddr=set_bit(0,paddr, TEMP_READ_BIT);
-	paddr=set_bit(0,paddr, TEMP_WRITE_BIT);
-	paddr=set_bit(0,paddr, TEMP_EXEC_BIT);
-
-	vaddr_t vaddr=PADDR_TO_KVADDR(paddr);
-	int ind=getfirst10(vaddr);
-	if(as->pgdir[ind].pg_table==NULL)
-			as->pgdir[ind].pg_table=(vaddr_t *)kmalloc(1024*sizeof(vaddr_t));
-	as->pgdir[ind].pg_table[getsecond10(vaddr)]=paddr;
-}
-*/
-/*static paddr_t getpaddrfromcore(vaddr_t va)
-{
-	for(int i=0;i<last_index;i++)
-	{
-		if(core_map[i].vaddr<=va && core_map[i].vaddr+PAGE_SIZE>va)
-		{
-			core_map[i].pstate=DIRTY;
-			core_map[i].npages=1;
-			return core_map[i].paddr;
-		}
-	}
-	return 0;
-}*/
 
 int
 as_prepare_load(struct addrspace *as)
@@ -336,10 +205,6 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
-	/*revert_perm_temp(as, as->as_pbase1);
-	revert_perm_temp(as, as->as_pbase2);
-	revert_perm_temp(as, as->as_stackpbase);
-*/
 	(void)as;
 	return 0;
 }
@@ -360,7 +225,10 @@ int page_create(struct PTE **ret, paddr_t *retpa)
 		panic("Page not allocated: Out of memory");
 	}
 	spinlock_init(&pg->slock);
-	bitmap_alloc(swap_map, &sa);
+	if(bitmap_alloc(swap_map, &sa))
+	{
+		panic("BITMAP_ALLOC: OUT OF MEMORY I THINK!");
+	}
 
 	pg->saddr=sa;
 	pg->swapped=0;

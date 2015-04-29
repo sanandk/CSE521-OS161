@@ -122,40 +122,6 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 	}
 	*ret=pid;
 	return 0;
-
-/*
-	size_t stoplen;
-	if(options!=909)
-	{
-		res=copycheck2((const_userptr_t) status, sizeof(int), &stoplen);
-		if(res)
-			return EFAULT;
-
-		if(options!=0)
-			return EINVAL;
-
-		res=copyout((const void *)&curthread->exit_code,(userptr_t)status,sizeof(int));
-		if(res)
-			return EFAULT;
-		if(pid==curthread->process_id)
-					return ECHILD;
-		//if(myparent==hisparent)
-			//		return ECHILD;
-		if(options!=909 && hisparent!=curthread->process_id)
-				return ECHILD;
-
-	}
-	int excode=0;
-	struct thread *wthread=NULL;
-	for(i=0;i<pcount;i++)
-		if(plist[i]->pid==pid)
-		{
-			wthread=plist[i]->tptr;
-			break;
-		}
-	if(i==pcount)
-		return ESRCH;
-*/
 }
 
 

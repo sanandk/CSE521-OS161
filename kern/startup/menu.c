@@ -154,7 +154,6 @@ common_prog(int nargs, char **args)
 		kprintf("waitpid failed: %s\n", strerror(result));
 		return 0;
 	}
-	//kprintf("\nwaitpid returned %d!",result);
 	return 0;
 }
 

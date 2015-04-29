@@ -199,6 +199,7 @@ cpu_create(unsigned hardware_number)
 	c->c_curthread = NULL;
 	threadlist_init(&c->c_zombies);
 	pcount=0;
+	lastpid=PID_MIN;
 	c->c_hardclocks = 0;
 
 	c->c_isidle = false;
@@ -493,7 +494,8 @@ pid_t pid_allocate()
 	{
 		return PID_MIN;
 	}
-	pid_t new_pid = pcount + PID_MIN;
+	pid_t new_pid = lastpid;
+	lastpid++;
 
 	/*if(new_pid==-1)
 	{

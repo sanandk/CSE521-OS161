@@ -67,26 +67,60 @@ int
 sys___waitpid(int *ret,pid_t pid, int *status, int options)
 {
 	*ret=-1;
-	int res,i;
-	pid_t myparent=-1, hisparent=-2;
+	int i,res, exists=-1;
+	if(options!=0 && options!=909) // 909 is given by menu command
+		return EINVAL;
+	if(status==NULL || status==(void *)0x40000000 || status==(void *)0x80000000)
+		return EFAULT;
 
+	if(pid<PID_MIN)
+		return EINVAL;
+	if(pid>PID_MAX)
+		return ESRCH;
+	pid_t myparent=-1, hisparent=-1;
 	for(i=0;i<pcount;i++)
 	{
-		if(myparent!=-1 && hisparent!=-2)
-			break;
 		if(plist[i]->pid==curthread->process_id)
 			myparent=plist[i]->ppid;
 		else if(plist[i]->pid==pid)
+		{
+			exists=i;
 			hisparent=plist[i]->ppid;
+		}
 	}
 
-	if(status==(void *)0x40000000)
-		return EFAULT;
+	if(options!=909)	// skip for menu
+	{
+		if(pid==curthread->process_id){ // Dont wait for self
+			return ECHILD;
+		}
+		if(pid==myparent){ // Dont wait for my parent
+			return ECHILD;
+		}
+		/*if(hisparent==curthread->process_id)
+		{
+			return EFAULT;
+		}
+		if(myparent==hisparent){ // Dont check for menu command alone
+			return ENOMEM;
+		}*/
 
-	if(pid<PID_MIN || pid>PID_MAX)
-		return ESRCH;
-	if(status==NULL)
+		if(exists==-1)
+			return ESRCH;
+	}
+
+	if(plist[exists]->tptr==NULL)
 		return EFAULT;
+	if(plist[exists]->exitcode == -999)
+		P(plist[exists]->esem);
+	int ec=plist[exists]->exitcode;
+	res=copyout((const void *)&ec,(userptr_t)status,sizeof(int));
+	if(res)
+		return EFAULT;
+	*ret=pid;
+	return 0;
+
+/*
 	size_t stoplen;
 	if(options!=909)
 	{
@@ -108,7 +142,6 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 				return ECHILD;
 
 	}
-
 	int excode=0;
 	struct thread *wthread=NULL;
 	for(i=0;i<pcount;i++)
@@ -119,24 +152,7 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 		}
 	if(i==pcount)
 		return ESRCH;
-
-
-	if(plist[i]->exitcode == -999)
-		P(plist[i]->esem);
-
-	excode=plist[i]->exitcode;
-
-	if(wthread==NULL && i>=pcount)
-		return ESRCH;
-
-	if(options!=909)
-	{
-		res=copyout((const void *)&excode,(userptr_t)status,sizeof(int));
-		if(res)
-			return EFAULT;
-	}
-	*ret=pid;
-	return 0;
+*/
 }
 
 

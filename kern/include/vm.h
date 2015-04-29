@@ -46,8 +46,9 @@
 enum page_state_t {FREE, DIRTY, CLEAN, FIXED};
 int  last_index;
 vaddr_t lastsa, freeaddr, lastaddr;
+size_t total_swap;
 struct coremap_page *core_map;
-struct bitmap *swap_map;
+//struct bitmap *swap_map;
 struct lock *biglock_paging;
 struct coremap_page {
 	struct PTE *page_ptr;
@@ -76,7 +77,6 @@ void page_unset_busy(paddr_t pa);
 int is_busy(paddr_t pa);
 void swapin(paddr_t pa, vaddr_t sa);
 void swapout(paddr_t pa, vaddr_t sa);
-
 /* Initialization function */
 void vm_bootstrap(void);
 void tlb_shootbyind(int);

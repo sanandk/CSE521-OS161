@@ -219,20 +219,23 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 
 int page_create(struct PTE **ret, paddr_t *retpa)
 {
-	paddr_t sa,pa;
+	paddr_t pa;
 	struct PTE *pg=kmalloc(sizeof(struct PTE));
 	if(pg==NULL){
 		panic("Page not allocated: Out of memory");
 	}
 	spinlock_init(&pg->slock);
-	if(bitmap_alloc(swap_map, &sa))
-	{
-		panic("BITMAP_ALLOC: OUT OF MEMORY I THINK!");
-	}
-
-	pg->saddr=sa;
-	pg->swapped=0;
 	pa=alloc_page(pg);
+
+//		int res=bitmap_alloc(swap_map, &sa);
+		//kprintf("\nAllocated %d sa=%d, %x",res, (int)sa, (unsigned int)pa);
+
+	pg->saddr=lastsa*PAGE_SIZE;
+	lastsa++;
+	if(lastsa>=total_swap)
+		panic("SWAP OUT OF MEMORY!");
+	pg->swapped=0;
+
 	KASSERT(pa!=0);
 
 	page_lock(pg);

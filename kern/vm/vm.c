@@ -29,7 +29,6 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
 
 static struct vnode *swap_vnode;
-static int vm_bootstrapped=0;
 
 static paddr_t ROUNDDOWN(paddr_t size)
 {
@@ -157,26 +156,27 @@ static void get_swap_ready(){
 	if(err!=0)
 			kprintf("VFS_ERROR:%d!",err);
 	VOP_STAT(swap_vnode, &st);
-	size_t total_swap=st.st_size/PAGE_SIZE;
+	total_swap=st.st_size/PAGE_SIZE;
 	kprintf("\nSWAP MEM: %lu bytes, %d pages\n",(unsigned long)st.st_size,total_swap);
-	total_swap=last_index*3;
-	swap_map=bitmap_create(total_swap);
-	lastsa=-1;
+	//total_swap=last_index*3;
+	lastsa=0;
+	/*swap_map=bitmap_create(total_swap);
+
 
 	while(swap_map==NULL)
 	{
 		total_swap-=last_index;
 		swap_map=bitmap_create(total_swap);
-	}
+	}*/
 	//panic("SMAP IS NULL");
 }
+static int vm_bootstrapped=0;
 
 void
 vm_bootstrap(void)
 {
 	paddr_t first_addr;
 	ram_getsize(&first_addr, &lastaddr);
-
 	tlb_wchan=wchan_create("TLB_WCHAN");
 	page_wchan=wchan_create("PG_WCHAN");
 	biglock_paging=lock_create("biglock_paging");
@@ -232,9 +232,11 @@ static void access_swap(paddr_t pa, vaddr_t sa, enum uio_rw mode){
 }
 void swapin(paddr_t pa, vaddr_t sa){
 	access_swap(pa, sa, UIO_READ);
+	kprintf("\nSWAPIN DONE: %x, %x", (unsigned int)pa, (unsigned int)sa);
 }
 void swapout(paddr_t pa, vaddr_t sa){
 	access_swap(pa, sa, UIO_WRITE);
+	kprintf("\nSWAPOUT DONE: %x, %x", (unsigned int)pa, (unsigned int)sa);
 }
 
 int count_free()

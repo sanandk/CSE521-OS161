@@ -100,23 +100,26 @@ sys___waitpid(int *ret,pid_t pid, int *status, int options)
 		/*if(hisparent==curthread->process_id)
 		{
 			return EFAULT;
-		}
-		if(myparent==hisparent){ // Dont check for menu command alone
-			return ENOMEM;
 		}*/
+		if(myparent==hisparent){ // Dont check for menu command alone
+			return EFAULT;
+		}
 
 		if(exists==-1)
 			return ESRCH;
 	}
 
-	if(plist[exists]->tptr==NULL)
-		return EFAULT;
-	if(plist[exists]->exitcode == -999)
+	/*if(plist[exists]->tptr==NULL)
+		return EFAULT;*/
+	if(plist[exists]->exitcode == -999){
 		P(plist[exists]->esem);
+	}
+
 	int ec=plist[exists]->exitcode;
 	res=copyout((const void *)&ec,(userptr_t)status,sizeof(int));
-	if(res)
-		return EFAULT;
+	if(res){
+		return res;
+	}
 	*ret=pid;
 	return 0;
 

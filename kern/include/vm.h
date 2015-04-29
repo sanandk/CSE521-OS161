@@ -38,6 +38,7 @@
 
 
 #include <machine/vm.h>
+#include <spinlock.h>
 
 /* Fault-type arguments to vm_fault() */
 #define VM_FAULT_READ        0    /* A read was attempted */
@@ -47,6 +48,7 @@ enum page_state_t {FREE, DIRTY, CLEAN, FIXED};
 int  last_index;
 vaddr_t lastsa, freeaddr, lastaddr;
 size_t total_swap;
+struct spinlock swap_address_lock;
 struct coremap_page *core_map;
 //struct bitmap *swap_map;
 struct lock *biglock_paging;

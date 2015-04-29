@@ -379,7 +379,7 @@ sys___exit(int code)
 		}
 
 	thread_exit();
-	//return 0;
+	return 0;
 }
 
 int

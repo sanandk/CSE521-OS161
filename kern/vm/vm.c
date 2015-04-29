@@ -232,11 +232,11 @@ static void access_swap(paddr_t pa, vaddr_t sa, enum uio_rw mode){
 }
 void swapin(paddr_t pa, vaddr_t sa){
 	access_swap(pa, sa, UIO_READ);
-	kprintf("\nSWAPIN DONE: %x, %x", (unsigned int)pa, (unsigned int)sa);
+	//kprintf("\nSWAPIN DONE: %x, %x", (unsigned int)pa, (unsigned int)sa);
 }
 void swapout(paddr_t pa, vaddr_t sa){
 	access_swap(pa, sa, UIO_WRITE);
-	kprintf("\nSWAPOUT DONE: %x, %x", (unsigned int)pa, (unsigned int)sa);
+	//kprintf("\nSWAPOUT DONE: %x, %x", (unsigned int)pa, (unsigned int)sa);
 }
 
 int count_free()
@@ -283,9 +283,9 @@ int count_free()
 
 static int choose_victim(){
 	int victim_ind,rd;
-  	while(1)
+	while(1)
 	{
-  		rd=random();
+		rd=random();
 	  victim_ind=rd%last_index;
 	  if(core_map[victim_ind].pstate==DIRTY && core_map[victim_ind].busy==0)
 	  {

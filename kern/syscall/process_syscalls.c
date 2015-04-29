@@ -368,16 +368,16 @@ int
 sys___exit(int code)
 {
 	int i;
-	curthread->exit_code=_MKWAIT_EXIT(code);
 	for(i=0;i<pcount;i++)
 		if(plist[i]->pid==curthread->process_id)
 		{
+				curthread->exit_code=_MKWAIT_EXIT(code);
 				plist[i]->exitcode=curthread->exit_code;
+				vm_tlbshootdown_all();
+				V(plist[i]->esem);
 				break;
 		}
 
-	V(plist[i]->esem);
-	vm_tlbshootdown_all();
 	thread_exit();
 	return 0;
 }

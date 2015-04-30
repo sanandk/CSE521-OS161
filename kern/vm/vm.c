@@ -322,7 +322,7 @@ static int make_page_available(int npages,int kernel){
 			ts.core_map_ind=evict_index;
 			ts.tlb_ind=core_map[evict_index].tlbind;
 			ipi_tlbshootdown(core_map[evict_index].cpuid, &ts);
-			while((int)core_map[evict_index].tlbind==-1){
+			while((int)core_map[evict_index].tlbind!=-1){
 				tlb_wait_and_shoot();
 			}
 		}
@@ -511,6 +511,7 @@ vm_tlbshootdown(struct tlbshootdown *ts)
 	int cind=ts->core_map_ind;
 	if(core_map[cind].tlbind==ts->tlb_ind && core_map[cind].cpuid==curcpu->c_number){
 		tlb_shootbyind(ts->tlb_ind);
+		core_map[cind].tlbind=-1;
 	}
 	wchan_wakeall(tlb_wchan);
 	spinlock_release(&coremap_lock);

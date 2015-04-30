@@ -377,7 +377,6 @@ sys___exit(int code)
 				V(plist[i]->esem);
 				break;
 		}
-
 	thread_exit();
 	return 0;
 }
@@ -387,6 +386,7 @@ sys___sbrk(int *ret, int amt)
 {
 	struct region *heap=regions_array_get(curthread->t_addrspace->regions,2);
 	vaddr_t heap_start=curthread->t_addrspace->heap_start, heap_end=curthread->t_addrspace->heap_end;
+	kprintf("\nNOP: %d",heap->as_npages);
 	struct PTE *temp;
 	if(amt==0){
 		*ret=heap_end;
@@ -409,7 +409,6 @@ sys___sbrk(int *ret, int amt)
 		if(amt<PAGE_SIZE){
 			*ret=heap_end;
 			heap_end-=amt;
-			//temp->vaddr-=amt;
 		}
 		else
 		{
@@ -450,7 +449,6 @@ sys___sbrk(int *ret, int amt)
 		{
 			*ret=heap_end;
 			heap_end+=amt;
-			//temp->vaddr+=amt;
 		}
 		else
 		{
@@ -465,14 +463,6 @@ sys___sbrk(int *ret, int amt)
 				return ENOMEM;
 			}
 
-			/*
-			int tot=count_free();
-			kprintf("\nFREE:%d",tot);*/
-			/*if(last_index<no){
-				*ret=-1;
-				return ENOMEM;
-			}*/
-
 			int i=pagetable_array_setsize(heap->pages, heap->as_npages+no);
 			KASSERT(i==0);
 			for(i=heap->as_npages;i<(int)heap->as_npages+no;i++){
@@ -485,7 +475,6 @@ sys___sbrk(int *ret, int amt)
 		}
 	}
 
-	//curthread->t_addrspace->heap_start=heap_start;
 	curthread->t_addrspace->heap_end=heap_end;
 
 	return 0;

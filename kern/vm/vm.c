@@ -312,7 +312,7 @@ static int make_page_available(int npages,int kernel){
 	core_map[evict_index].busy=1;
 	core_map[evict_index].npages=npages;
 
-	victim_pg->swapped=1;
+
 	vaddr_t sa=victim_pg->saddr;
 	oldva=victim_pg->vaddr;
 
@@ -341,12 +341,13 @@ static int make_page_available(int npages,int kernel){
 	if(core_map[evict_index].pstate==DIRTY)
 	{
 		swapout(get_addr_by_ind(evict_index) & PAGE_FRAME, sa);
-		core_map[evict_index].pstate=CLEAN;
+		victim_pg->swapped=1;
 	}
-	if(kernel==1)
-			core_map[evict_index].pstate=FIXED;
-
 	spinlock_acquire(&coremap_lock);
+	if(kernel==1)
+		core_map[evict_index].pstate=FIXED;
+	else
+		core_map[evict_index].pstate=CLEAN;
 
 	core_map[evict_index].page_ptr=NULL;
 	wchan_wakeall(page_wchan);
@@ -389,7 +390,7 @@ paddr_t alloc_page(struct PTE *pg)
 	core_map[found].busy=1;
 	core_map[found].page_ptr=pg;
 	pa=get_addr_by_ind(found);
-
+	bzero((void *)PADDR_TO_KVADDR(get_addr_by_ind(found)), PAGE_SIZE);
 	spinlock_release(&coremap_lock);
 	if(curthread!=NULL && !curthread->t_in_interrupt)
 		lock_release(biglock_paging);

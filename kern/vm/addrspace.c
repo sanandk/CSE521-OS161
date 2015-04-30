@@ -171,7 +171,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	int num=regions_array_num(as->regions);
 	if(num==2)
 	{
-		as->heap_start=vaddr+(PAGE_SIZE);
+		as->heap_start=vaddr;
 		as->heap_end=as->heap_start;
 		struct region *heap=region_create(1);
 		if(heap==NULL){
@@ -229,10 +229,10 @@ int page_create(struct PTE **ret, paddr_t *retpa)
 	pa=alloc_page(pg);
 
 //		int res=bitmap_alloc(swap_map, &sa);
-		//kprintf("\nAllocated %d sa=%d, %x",res, (int)sa, (unsigned int)pa);
 	spinlock_acquire(&swap_address_lock);
-	pg->saddr=lastsa*PAGE_SIZE;
 	lastsa++;
+	pg->saddr=lastsa*PAGE_SIZE;
+	//kprintf("\nAllocated sa=%d, %x",(int)lastsa, (unsigned int)pa);
 	if(lastsa>=total_swap)
 		panic("SWAP OUT OF MEMORY!");
 	spinlock_release(&swap_address_lock);
@@ -269,6 +269,7 @@ static int page_copy(struct PTE *old, struct PTE **ret)
 		swapin(oldpa, sa);
 		page_lock(old);
 		lock_release(biglock_paging);
+		old->swapped=0;
 		old->paddr=oldpa;
 	}
 	KASSERT(is_busy(oldpa));

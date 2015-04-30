@@ -242,7 +242,7 @@ int page_create(struct PTE **ret, paddr_t *retpa)
 
 	page_lock(pg);
 	pg->paddr=pa;
-	KASSERT(is_busy(pa));
+	//KASSERT(is_busy(pa));
 
 	*ret=pg;
 	*retpa=pa;
@@ -256,7 +256,7 @@ static int page_copy(struct PTE *old, struct PTE **ret)
 	paddr_t oldpa, newpa,sa;
 
 	page_create(&new, &newpa);
-	KASSERT(is_busy(newpa));
+	//KASSERT(is_busy(newpa));
 	page_sneek(old);
 	oldpa=old->paddr & PAGE_FRAME;
 	if(old->swapped==1){
@@ -264,7 +264,7 @@ static int page_copy(struct PTE *old, struct PTE **ret)
 		page_unlock(old);
 		oldpa=alloc_page(old);
 		KASSERT(oldpa!=0);
-		KASSERT(is_busy(oldpa));
+		//KASSERT(is_busy(oldpa));
 		lock_acquire(biglock_paging);
 		swapin(oldpa, sa);
 		page_lock(old);
@@ -272,7 +272,7 @@ static int page_copy(struct PTE *old, struct PTE **ret)
 		old->swapped=0;
 		old->paddr=oldpa;
 	}
-	KASSERT(is_busy(oldpa));
+	//KASSERT(is_busy(oldpa));
 
 	memmove((void *)PADDR_TO_KVADDR(newpa),
 			(const void *)PADDR_TO_KVADDR(oldpa),

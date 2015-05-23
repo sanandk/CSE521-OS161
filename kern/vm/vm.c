@@ -559,7 +559,6 @@ static void insert_into_tlb(vaddr_t vaddr, paddr_t paddr, int write_or_not){
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
-
 	struct addrspace *as=curthread->t_addrspace;
 	int i,ind;
 	vaddr_t base, top,sa;

@@ -182,6 +182,7 @@ test1(void)
 	}
 
 	markblock(x, BIGSIZE, 0, 0);
+
 	if (checkblock(x, BIGSIZE, 0, 0)) {
 		printf("FAILED: data corrupt\n");
 		return;
@@ -537,10 +538,9 @@ test567(int testno, unsigned long seed)
 		if (ptrs[n] == NULL) {
 			size = sizes[random()%8];
 			ptrs[n] = malloc(size);
-			//printf("\nMALLOC RETURNED!\n");
 			psizes[n] = size;
 			if (ptrs[n] == NULL) {
-		//		printf("\nmalloc %u failed\n", size);
+				printf("\nmalloc %u failed\n", size);
 				failed = 1;
 				break;
 			}

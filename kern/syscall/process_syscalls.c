@@ -386,7 +386,6 @@ sys___sbrk(int *ret, int amt)
 {
 	struct region *heap=regions_array_get(curthread->t_addrspace->regions,2);
 	vaddr_t heap_start=curthread->t_addrspace->heap_start, heap_end=curthread->t_addrspace->heap_end;
-	kprintf("\nNO PAGES IN HEAP: %d",heap->as_npages);
 	struct PTE *temp;
 	if(amt==0){
 		*ret=heap_end;
@@ -476,7 +475,5 @@ sys___sbrk(int *ret, int amt)
 	}
 
 	curthread->t_addrspace->heap_end=heap_end;
-
-
 	return 0;
 }

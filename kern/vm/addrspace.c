@@ -171,6 +171,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	int num=regions_array_num(as->regions);
 	if(num==2)
 	{
+		vaddr=vaddr+ (PAGE_SIZE)*npages;
 		as->heap_start=vaddr;
 		as->heap_end=as->heap_start;
 		struct region *heap=region_create(1);
